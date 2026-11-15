@@ -146,6 +146,15 @@ function maskDatabaseUrl(url: string): string {
   }
 }
 
+function redactStartupDiagnostic(message: string): string {
+  let redacted = message;
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!value || value.length < 8 || !/(?:DATABASE_URL|SECRET|PASSWORD|TOKEN|API_KEY|PRIVATE_KEY)/i.test(key)) continue;
+    redacted = redacted.split(value).join('[REDACTED]');
+  }
+  return redacted;
+}
+
 function getInitSqlScript(): string {
   return ['easypanel-init.sql', 'intelligence.sql', 'crm.sql', 'menu-import.sql', 'analytics.sql', 'upsell.sql', 'feedback.sql']
     .filter(name => fs.existsSync(path.join(__dirname, 'database', name)))
@@ -416,7 +425,7 @@ async function startServer() {
   memoryCategories.length = 0;
   memoryProducts.length = 0;
   const database = await initializePostgresConnection(process.env.DATABASE_URL, true);
-  if (!database.success || !pgPool) throw new Error('PostgreSQL indisponível; inicialização cancelada.');
+  if (!database.success || !pgPool) throw new Error(`PostgreSQL indisponível; inicialização cancelada: ${database.error || 'sem detalhes'}`);
   const databasePool = pgPool;
   const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -6468,7 +6477,8 @@ async function startServer() {
   });
 }
 
-startServer().catch(() => {
-  console.error(JSON.stringify({ level: 'error', event: 'startup_failed' }));
+startServer().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(JSON.stringify({ level: 'error', event: 'startup_failed', message: redactStartupDiagnostic(message) }));
   process.exitCode = 1;
 });
