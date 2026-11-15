@@ -1,0 +1,22 @@
+node_modules/
+build/
+dist/
+coverage/
+test-results/
+playwright-report/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+backups/
+*.dump
+*.dump.sha256
+
+# Local tooling, credentials and the original instruction document.
+.aws/
+.codex/
+.agents/
+*.pem
+*.key
+prompt novo.odt

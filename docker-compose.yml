@@ -1,0 +1,58 @@
+services:
+  app:
+    build: .
+    init: true
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:${PORT:-3000}:3000'
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://aladay:${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD}@db:5432/aladay
+    depends_on:
+      db:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options: {max-size: '10m', max-file: '3'}
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aladay
+      POSTGRES_DB: aladay
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U aladay -d aladay']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: json-file
+      options: {max-size: '10m', max-file: '3'}
+  backup:
+    image: postgres:17-alpine
+    profiles: [ops]
+    environment:
+      PGHOST: db
+      PGUSER: aladay
+      PGDATABASE: aladay
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+    volumes:
+      - ./scripts:/scripts:ro
+      - ${BACKUP_PATH:-./backups}:/backups
+    entrypoint: ['/bin/sh', '/scripts/backup.sh']
+    depends_on:
+      db:
+        condition: service_healthy
+volumes:
+  postgres_data:
