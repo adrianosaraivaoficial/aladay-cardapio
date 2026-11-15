@@ -36,12 +36,13 @@ export function getConsentStatus(): ConsentStatus {
 /**
  * Sets consent status and applies it to GA4 if applicable
  */
-export function setConsentStatus(status: 'granted' | 'denied'): void {
+export function setConsentStatus(status: 'granted' | 'denied', options?: { initializeGA4?: boolean }): void {
   try {
     localStorage.setItem(CONSENT_STORAGE_KEY, status);
   } catch {
     // ignore
   }
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('aladay-consent-change'));
 
   if (typeof window !== 'undefined' && window.gtag) {
     window.gtag('consent', 'update', {
@@ -51,7 +52,7 @@ export function setConsentStatus(status: 'granted' | 'denied'): void {
     });
   }
 
-  if (status === 'granted') {
+  if (status === 'granted' && options?.initializeGA4 !== false) {
     initGA4();
     trackConversionEvent('consent_granted', {
       consent_type: 'analytics',

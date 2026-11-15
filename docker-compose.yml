@@ -1,35 +1,58 @@
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: saas_cardapios_app
+    build: .
+    init: true
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - '127.0.0.1:${PORT:-3000}:3000'
+    env_file: .env
     environment:
-      - NODE_ENV=production
-      - PORT=3000
-      - APP_URL=${APP_URL:-https://aladay.com.br}
-      - DATABASE_URL=${DATABASE_URL}
-      - PGSSLMODE=${PGSSLMODE:-disable}
-      - REQUIRE_POSTGRES=${REQUIRE_POSTGRES:-true}
-      - REDIS_URL=${REDIS_URL:-}
-      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@aladay.com.br}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      - EVOLUTION_API_URL=${EVOLUTION_API_URL:-https://agencia-evolution-api.2eoc7n.easypanel.host}
-      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}
-      - EVOLUTION_DEFAULT_INSTANCE=${EVOLUTION_DEFAULT_INSTANCE:-aladay}
-      - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL:-https://agencia-n8n.2eoc7n.easypanel.host/webhook-test/saas}
-      - JWT_SECRET=${JWT_SECRET}
-      - PIX_WEBHOOK_SECRET=${PIX_WEBHOOK_SECRET}
-      - ASAAS_ENVIRONMENT=${ASAAS_ENVIRONMENT:-production}
-      - ASAAS_API_KEY=${ASAAS_API_KEY}
-      - ASAAS_WEBHOOK_TOKEN=${ASAAS_WEBHOOK_TOKEN}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://aladay:${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD}@db:5432/aladay
+    depends_on:
+      db:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options: {max-size: '10m', max-file: '3'}
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aladay
+      POSTGRES_DB: aladay
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/api/v1/health"]
-      interval: 30s
+      test: ['CMD-SHELL', 'pg_isready -U aladay -d aladay']
+      interval: 5s
       timeout: 5s
-      retries: 3
-      start_period: 15s
+      retries: 10
+    logging:
+      driver: json-file
+      options: {max-size: '10m', max-file: '3'}
+  backup:
+    image: postgres:17-alpine
+    profiles: [ops]
+    environment:
+      PGHOST: db
+      PGUSER: aladay
+      PGDATABASE: aladay
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+    volumes:
+      - ./scripts:/scripts:ro
+      - ${BACKUP_PATH:-./backups}:/backups
+    entrypoint: ['/bin/sh', '/scripts/backup.sh']
+    depends_on:
+      db:
+        condition: service_healthy
+volumes:
+  postgres_data:

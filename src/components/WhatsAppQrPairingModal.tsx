@@ -8,17 +8,11 @@ import {
   AlertTriangle,
   Copy,
   Check,
-  Server,
   Zap,
   ShieldCheck,
-  Radio,
   Sliders,
-  ExternalLink,
-  HelpCircle,
   X,
-  BatteryCharging,
-  Wifi,
-  PhoneCall
+  BatteryCharging
 } from 'lucide-react';
 import { RestaurantTenant, EvolutionQrConnectResponse } from '../types';
 
@@ -57,7 +51,7 @@ export const WhatsAppQrPairingModal: React.FC<WhatsAppQrPairingModalProps> = ({
 
   const normalizeBrPhone = useCallback((raw?: string) => {
     const digits = String(raw || '').replace(/\D/g, '').replace(/^0+/, '');
-    if (!digits) return '5591981214188';
+    if (!digits) return '';
     if (digits.length === 10 || digits.length === 11) {
       return `55${digits}`;
     }
@@ -65,7 +59,7 @@ export const WhatsAppQrPairingModal: React.FC<WhatsAppQrPairingModalProps> = ({
   }, []);
 
   // Phone input for pairing code alternative
-  const [phoneInput, setPhoneInput] = useState(() => normalizeBrPhone(tenant.phone || '5591981214188'));
+  const [phoneInput, setPhoneInput] = useState(() => normalizeBrPhone(tenant.phone || ''));
 
   useEffect(() => {
     if (tenant.phone) {
@@ -691,7 +685,7 @@ export const WhatsAppQrPairingModal: React.FC<WhatsAppQrPairingModalProps> = ({
                       value={phoneInput}
                       onChange={(e) => setPhoneInput(e.target.value)}
                       onBlur={() => setPhoneInput(normalizeBrPhone(phoneInput))}
-                      placeholder="5591981214188"
+                      placeholder="Informe DDI, DDD e número"
                       className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg font-mono text-neutral-900"
                     />
                     <button

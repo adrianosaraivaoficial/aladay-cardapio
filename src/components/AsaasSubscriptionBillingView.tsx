@@ -9,31 +9,34 @@ import {
   Copy,
   Check,
   RefreshCw,
-  ExternalLink,
   ShieldCheck,
   Zap,
   Info,
   Calendar,
   Lock,
   FileText,
-  Sliders,
-  DollarSign
+  Sliders
 } from 'lucide-react';
-import { RestaurantTenant, AsaasSubscriptionData, AsaasInvoice, AsaasBillingType } from '../types';
-import { generateDynamicPixPayload } from '../utils/pixPayloadGenerator';
+import { RestaurantTenant, AsaasSubscriptionData, AsaasBillingType } from '../types';
 import QRCode from 'qrcode';
 
 interface AsaasSubscriptionBillingViewProps {
   tenant: RestaurantTenant;
   onUpdateTenant: (updatedTenant: RestaurantTenant) => void;
   isSuperAdmin?: boolean;
+  authToken?: string;
 }
 
 export const AsaasSubscriptionBillingView: React.FC<AsaasSubscriptionBillingViewProps> = ({
   tenant,
   onUpdateTenant,
   isSuperAdmin = false,
+  authToken,
 }) => {
+  const authorizedHeaders = (withJson = false): Record<string, string> => ({
+    ...(withJson ? { 'Content-Type': 'application/json' } : {}),
+    ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+  });
   const [subscription, setSubscription] = useState<AsaasSubscriptionData | null>(null);
   const [gatewayConfig, setGatewayConfig] = useState<{
     environment: 'sandbox' | 'production';
@@ -65,6 +68,11 @@ export const AsaasSubscriptionBillingView: React.FC<AsaasSubscriptionBillingView
   const [localPixQrUrl, setLocalPixQrUrl] = useState<string>('');
 
   // Credit Card Form State
+  const [billingName,setBillingName]=useState('');
+  const [billingEmail,setBillingEmail]=useState('');
+  const [billingTaxId,setBillingTaxId]=useState('');
+  const [billingPostalCode,setBillingPostalCode]=useState('');
+  const [billingAddressNumber,setBillingAddressNumber]=useState('');
   const [ccNumber, setCcNumber] = useState('');
   const [ccHolder, setCcHolder] = useState('');
   const [ccExpiry, setCcExpiry] = useState('');
@@ -75,7 +83,6 @@ export const AsaasSubscriptionBillingView: React.FC<AsaasSubscriptionBillingView
   const [showConfigSettings, setShowConfigSettings] = useState(false);
   const [configEnv, setConfigEnv] = useState<'sandbox' | 'production'>('sandbox');
   const [configApiKey, setConfigApiKey] = useState('');
-  const [configWebhookToken, setConfigWebhookToken] = useState('');
   const [configPixKey, setConfigPixKey] = useState('+559131976334');
   const [configPixBeneficiary, setConfigPixBeneficiary] = useState('ALADAY CARDAPIOS');
 
@@ -83,7 +90,9 @@ export const AsaasSubscriptionBillingView: React.FC<AsaasSubscriptionBillingView
   const fetchSubscription = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/v1/asaas/subscription/${tenant.slug}`);
+      const res = await fetch(`/api/v1/asaas/subscription/${tenant.slug}`, {
+        headers: authorizedHeaders(),
+      });
       if (res.ok) {
         const data = await res.json();
         if (data.subscription) {
@@ -148,17 +157,21 @@ export const AsaasSubscriptionBillingView: React.FC<AsaasSubscriptionBillingView
     try {
       const res = await fetch(`/api/v1/asaas/subscription/${tenant.slug}/subscribe`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authorizedHeaders(true),
         body: JSON.stringify({
+          customerName: billingName || subscription?.customer?.name,
+          customerEmail: billingEmail || subscription?.customer?.email,
+          customerCpfCnpj: billingTaxId || subscription?.customer?.cpfCnpj,
+          customerPhone: tenant.phone,
           billingType: type,
           planCycle: selectedPlanCycle,
         }),
       });
+      const data = await res.json();
       if (res.ok) {
-        const data = await res.json();
         setSubscription(data.subscription);
         showToast('success', `Forma de cobrança mensal alterada para ${type === 'PIX' ? 'Pix Recorrente' : 'Boleto Bancário'}!`);
-      }
+      } else { showToast('error',data.error || 'Não foi possível alterar a cobrança.'); }
     } catch {
       showToast('error', 'Falha ao atualizar método de cobrança.');
     }
@@ -176,10 +189,16 @@ export const AsaasSubscriptionBillingView: React.FC<AsaasSubscriptionBillingView
     try {
       const res = await fetch(`/api/v1/asaas/subscription/${tenant.slug}/subscribe`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authorizedHeaders(true),
         body: JSON.stringify({
           billingType: 'CREDIT_CARD',
           planCycle: selectedPlanCycle,
+          customerName: billingName || subscription?.customer?.name,
+          customerEmail: billingEmail || subscription?.customer?.email,
+          customerCpfCnpj: billingTaxId || subscription?.customer?.cpfCnpj,
+          customerPhone: tenant.phone,
+          creditCardPostalCode: billingPostalCode,
+          creditCardAddressNumber: billingAddressNumber,
           creditCardNumber: ccNumber,
           creditCardHolder: ccHolder,
           creditCardExpiry: ccExpiry,
@@ -192,8 +211,8 @@ export const AsaasSubscriptionBillingView: React.FC<AsaasSubscriptionBillingView
         showToast(
           'success',
           selectedPlanCycle === 'YEARLY'
-            ? 'Assinatura Anual por R$ 99,00/mês no Cartão de Crédito ativada com sucesso via Asaas!'
-            : 'Cartão cadastrado com sucesso! Mensalidade de R$ 129,90 liquidada via Asaas.'
+            ? 'Assinatura criada no Asaas. A liberação depende da confirmação do pagamento.'
+            : 'Cartão enviado ao Asaas. Consulte a confirmação do pagamento.'
         );
         setCcNumber('');
         setCcHolder('');
@@ -201,7 +220,7 @@ export const AsaasSubscriptionBillingView: React.FC<AsaasSubscriptionBillingView
         setCcCvv('');
         onUpdateTenant({
           ...tenant,
-          subscriptionStatus: 'active',
+          subscriptionStatus: data.subscription.status === 'ACTIVE' ? 'active' : 'past_due',
           asaasSubscription: data.subscription,
         });
       } else {
@@ -219,7 +238,7 @@ export const AsaasSubscriptionBillingView: React.FC<AsaasSubscriptionBillingView
     try {
       const res = await fetch('/api/v1/asaas/simulate-webhook', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authorizedHeaders(true),
         body: JSON.stringify({
           eventType,
           tenantSlug: tenant.slug,
@@ -245,11 +264,10 @@ export const AsaasSubscriptionBillingView: React.FC<AsaasSubscriptionBillingView
     try {
       const res = await fetch('/api/v1/asaas/config', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authorizedHeaders(true),
         body: JSON.stringify({
           environment: configEnv,
           apiKey: configApiKey || undefined,
-          webhookToken: configWebhookToken || undefined,
           pixKey: configPixKey || undefined,
           pixBeneficiaryName: configPixBeneficiary || undefined,
         }),
@@ -273,6 +291,7 @@ export const AsaasSubscriptionBillingView: React.FC<AsaasSubscriptionBillingView
     try {
       const res = await fetch(`/api/v1/asaas/subscription/${tenant.slug}/${endpoint}`, {
         method: 'POST',
+        headers: authorizedHeaders(),
       });
       if (res.ok) {
         const data = await res.json();
@@ -300,13 +319,7 @@ export const AsaasSubscriptionBillingView: React.FC<AsaasSubscriptionBillingView
     if (pendingInvoice?.pixCopiaECola && !isLegacyCorruptedPix(pendingInvoice.pixCopiaECola)) {
       return pendingInvoice.pixCopiaECola;
     }
-    return generateDynamicPixPayload({
-      pixKey: gatewayConfig.pixKey || '+559131976334',
-      beneficiaryName: gatewayConfig.pixBeneficiaryName || 'ALADAY CARDAPIOS',
-      merchantCity: gatewayConfig.pixCity || 'BELEM',
-      amountCents: Math.round((pendingInvoice?.value || 129.9) * 100),
-      txid: pendingInvoice?.id || 'ASSINATURAALADAY',
-    });
+    return '';
   }, [
     pendingInvoice?.pixCopiaECola,
     pendingInvoice?.value,
@@ -317,6 +330,7 @@ export const AsaasSubscriptionBillingView: React.FC<AsaasSubscriptionBillingView
   ]);
 
   useEffect(() => {
+    if (!validSubscriptionPixPayload) { setLocalPixQrUrl(''); return; }
     let active = true;
     QRCode.toDataURL(validSubscriptionPixPayload, { width: 256, margin: 2 })
       .then((url) => {
@@ -659,6 +673,14 @@ export const AsaasSubscriptionBillingView: React.FC<AsaasSubscriptionBillingView
         </div>
       </div>
 
+      <fieldset className="grid gap-3 sm:grid-cols-2 rounded-xl border border-slate-200 p-4">
+        <legend className="px-2 text-sm font-bold">Dados do titular da cobrança</legend>
+        <label className="text-sm">Nome completo<input className="mt-1 w-full rounded border p-2" autoComplete="name" value={billingName} onChange={e=>setBillingName(e.target.value)} /></label>
+        <label className="text-sm">E-mail<input className="mt-1 w-full rounded border p-2" type="email" autoComplete="email" value={billingEmail} onChange={e=>setBillingEmail(e.target.value)} /></label>
+        <label className="text-sm">CPF ou CNPJ<input className="mt-1 w-full rounded border p-2" inputMode="numeric" value={billingTaxId} onChange={e=>setBillingTaxId(e.target.value)} /></label>
+        <label className="text-sm">CEP do titular do cartão<input className="mt-1 w-full rounded border p-2" autoComplete="postal-code" inputMode="numeric" value={billingPostalCode} onChange={e=>setBillingPostalCode(e.target.value)} /></label>
+        <label className="text-sm">Número do endereço do titular<input className="mt-1 w-full rounded border p-2" value={billingAddressNumber} onChange={e=>setBillingAddressNumber(e.target.value)} /></label>
+      </fieldset>
       {/* Main Payment & Active Invoice Management Card */}
       <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-6">
         {/* 1. Plan Cycle Selector: Anual R$ 99,00/mês (Cartão) vs Mensal R$ 129,90/mês */}

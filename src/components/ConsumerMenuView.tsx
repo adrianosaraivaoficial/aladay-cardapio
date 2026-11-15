@@ -1,10 +1,16 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { ShoppingBag, Clock, MapPin, Plus, Minus, Check, ArrowRight, ArrowLeft, MessageSquare, AlertCircle, Sparkles, Printer, ExternalLink, Zap, QrCode, Share2, Copy, X, Settings, Trash2, Search, UserCheck } from 'lucide-react';
-import { Category, DeliveryZone, OptionGroup, OptionItem, Order, OrderItem, OrderItemOption, Product, RestaurantTenant } from '../types';
+import { checkoutAttempt } from '../utils/checkoutIdempotency';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { ShoppingBag, Clock, MapPin, Plus, Minus, Check, ArrowRight, ArrowLeft, MessageSquare, AlertCircle, ExternalLink, Zap, QrCode, Share2, Copy, X, Settings, Trash2, Search, UserCheck } from 'lucide-react';
+import { Category, OptionGroup, OptionItem, Order, OrderItem, OrderItemOption, Product, RestaurantTenant } from '../types';
 import { ThermalTicketModal } from './ThermalTicketModal';
 import { PixPaymentModal } from './PixPaymentModal';
-import { resolveTenantPixCredentials } from '../utils/pixPayloadGenerator';
+import { buildPublicMenuUrl } from '../utils/publicMenuUrl';
 import QRCode from 'qrcode';
+import { getConsentStatus } from '../utils/analytics';
+import { emitIntelligenceEvent, intelligenceSession } from '../utils/intelligenceAnalytics';
+import { CartUpsellSuggestions, resetUpsellCheckout, UpsellAttribution } from './CartUpsellSuggestions';
+import { PublicReviewsView } from './PublicReviewsView';
+import { ConsumerAnalyticsConsent } from './ConsumerAnalyticsConsent';
 
 interface ConsumerMenuViewProps {
   tenant: RestaurantTenant;
@@ -25,6 +31,26 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
   onUpdateTenant,
   canConfigureSchedule = false,
 }) => {
+  const [intelligenceAvailable, setIntelligenceAvailable] = useState({ analytics: false, upsell: false, feedback: false });
+  const viewedSession = useRef<string | null>(null);
+  const upsellAdded = useRef<(() => Promise<UpsellAttribution | null>) | null>(null);
+  const upsellAttributions = useRef<Array<Promise<UpsellAttribution | null>>>([]);
+  useEffect(() => {
+    let active = true;
+    setIntelligenceAvailable({ analytics: false, upsell: false, feedback: false }); viewedSession.current = null;
+    if (!canConfigureSchedule) fetch(`/api/v1/tenants/${encodeURIComponent(tenant.slug)}/intelligence/availability`).then(async response => { if (!response.ok) return; const data = await response.json(); if (active) setIntelligenceAvailable({ analytics: data.analytics === true, upsell: data.upsell === true, feedback: data.feedback === true }); }).catch(() => {});
+    return () => { active = false; };
+  }, [tenant.slug, canConfigureSchedule]);
+  useEffect(() => {
+    const trackMenu = () => {
+      if (!intelligenceAvailable.analytics) return;
+      if (getConsentStatus() !== 'granted') { intelligenceSession(tenant.slug); return; }
+      const sessionId = intelligenceSession(tenant.slug);
+      if (sessionId && viewedSession.current !== sessionId) { viewedSession.current = sessionId; void emitIntelligenceEvent(tenant.slug, true, 'menu_view'); }
+    };
+    trackMenu(); window.addEventListener('aladay-consent-change', trackMenu); window.addEventListener('storage', trackMenu);
+    return () => { window.removeEventListener('aladay-consent-change', trackMenu); window.removeEventListener('storage', trackMenu); };
+  }, [tenant.slug, intelligenceAvailable.analytics]);
   const sortedCategories = useMemo(
     () => [...categories].sort((a, b) => a.order - b.order),
     [categories]
@@ -85,7 +111,8 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
       return '';
     }
   });
-  const [paymentMethod, setPaymentMethod] = useState<string>('⚡ Pix Instantâneo (Aprovação Automática)');
+  const [paymentMethod, setPaymentMethod] = useState<string>('⚡ Pix Instantâneo (Confirmação do Pagamento)');
+  useEffect(() => { if (isCartOpen && cartStep === 'checkout') void emitIntelligenceEvent(tenant.slug, intelligenceAvailable.analytics, 'checkout_start'); }, [isCartOpen, cartStep, tenant.slug, intelligenceAvailable.analytics]);
 
   // Detect ?mesa=XX from QR Code on Table, or ?repetir=ORDER_ID / ?item=PRODUCT_ID from WhatsApp AI Agent ("Quero aquele de ontem")
   useEffect(() => {
@@ -165,8 +192,6 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
 
   // Pix payment modal state
   const [activePixOrder, setActivePixOrder] = useState<Order | null>(null);
-  const tenantPix = useMemo(() => resolveTenantPixCredentials(tenant), [tenant]);
-
   // Confirmation view state
   const [lastPlacedOrder, setLastPlacedOrder] = useState<Order | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -253,8 +278,7 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
   };
 
   const menuShareUrl = useMemo(() => {
-    if (typeof window === 'undefined') return `https://${tenant.slug}.com.br`;
-    return `${window.location.origin}${window.location.pathname}?loja=${encodeURIComponent(tenant.slug)}`;
+    return buildPublicMenuUrl(tenant.slug);
   }, [tenant.slug]);
 
   useEffect(() => {
@@ -341,6 +365,9 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
   // Handle open customization
   const handleOpenProduct = (product: Product) => {
     if (!product.isAvailable) return;
+    upsellAdded.current = null;
+    void emitIntelligenceEvent(tenant.slug, intelligenceAvailable.analytics, 'product_click', product.id);
+    void emitIntelligenceEvent(tenant.slug, intelligenceAvailable.analytics, 'product_view', product.id);
     setActiveProductForCustomization(product);
     setCustomizationQuantity(1);
     setCustomizationNotes('');
@@ -567,6 +594,8 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
     });
 
     const addedName = activeProductForCustomization.name;
+    if (upsellAdded.current) upsellAttributions.current.push(upsellAdded.current());
+    upsellAdded.current = null;
     setActiveProductForCustomization(null);
 
     if (openBagImmediately) {
@@ -684,35 +713,48 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
       updatedAt: nowTime,
     };
 
-    let finalOrder: Order = localOrder;
+    let finalOrder: Order;
 
     try {
+      const attributed = intelligenceAvailable.upsell && getConsentStatus() === 'granted' ? (await Promise.all(upsellAttributions.current)).filter((value): value is UpsellAttribution => Boolean(value && cartItems.some(item => item.productId === value.productId))) : [];
+      const latest = attributed[attributed.length - 1];
+      const attribution = latest ? { sessionId: latest.sessionId, checkoutId: latest.checkoutId, offerIds: [...new Set(attributed.filter(value => value.sessionId === latest.sessionId && value.checkoutId === latest.checkoutId).map(value => value.offerId))].slice(0, 3) } : undefined;
+      const checkoutPayload = {
+        tenantSlug: tenant.slug, customerName: localOrder.customerName, customerPhone: localOrder.customerPhone,
+        type: localOrder.type, tableNumber: localOrder.tableNumber, deliveryAddress: localOrder.deliveryAddress,
+        deliveryZoneName: localOrder.deliveryZoneName, items: localOrder.items, paymentMethod: localOrder.paymentMethod,
+        ...(attribution ? { upsellAttribution: attribution } : {}),
+      };
+      const attempt = await checkoutAttempt(tenant.slug, checkoutPayload);
       const response = await fetch('/api/v1/orders/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...localOrder,
-          tenantName: tenant.name,
-          tenantPhone: tenant.phone,
-          idempotencyKey: `${tenant.slug}_${localOrder.id}_${Date.now()}`,
+          ...checkoutPayload,
+          idempotencyKey: attempt.key,
         }),
       });
-      if (response.ok) {
-        const json = await response.json();
-        if (json?.data) {
-          finalOrder = {
-            ...localOrder,
-            ...json.data,
-          };
-        }
+      const json = await response.json().catch(() => null);
+      if (!response.ok || !json?.data) {
+        setCheckoutError(json?.error || 'Não foi possível registrar o pedido. Revise os dados e tente novamente.');
+        setIsSubmitting(false);
+        return;
       }
+      finalOrder = {
+        ...localOrder,
+        ...json.data,
+      };
+      attempt.complete();
     } catch {
-      // Fallback to localOrder if offline
+      setCheckoutError('Sem conexão com o restaurante. O pedido não foi enviado; tente novamente.');
+      setIsSubmitting(false);
+      return;
     }
 
     onOrderCreated(finalOrder);
     setLastPlacedOrder(finalOrder);
     setCartItems([]);
+    upsellAttributions.current = []; resetUpsellCheckout(tenant.slug);
     setCashChangeFor('');
     setCartStep('bag');
     setIsSubmitting(false);
@@ -832,6 +874,10 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
             <img
               src={tenant.logoUrl}
               alt={tenant.name}
+              decoding="async"
+              width={48}
+              height={48}
+              fetchPriority="high"
               className="w-12 h-12 rounded-xl object-cover bg-white/20 border border-white/30 shrink-0 shadow-xs"
             />
           ) : (
@@ -1280,6 +1326,8 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
           )}
 
           {/* Product List */}
+          <ConsumerAnalyticsConsent enabled={intelligenceAvailable.analytics} />
+          <PublicReviewsView key={`reviews_${tenant.slug}`} tenantSlug={tenant.slug} enabled={intelligenceAvailable.feedback} />
           <div className="p-4 space-y-3 flex-1 overflow-y-auto">
             {filteredProducts.length === 0 ? (
               <div className="text-center py-10 space-y-2">
@@ -1318,6 +1366,8 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
                         <img
                           src={product.imageUrl}
                           alt={product.name}
+                          loading="lazy"
+                          decoding="async"
                           className="w-20 h-20 rounded-lg object-cover bg-neutral-100"
                         />
                         {qtyInCart > 0 && (
@@ -1732,6 +1782,7 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
                 </div>
 
                 {/* Bag Footer: Subtotal + Proceed to Customer Info */}
+                <CartUpsellSuggestions key={tenant.slug} tenantSlug={tenant.slug} enabled={intelligenceAvailable.upsell} cart={cartItems} products={products} onChoose={(product, onAdded) => { setIsCartOpen(false); handleOpenProduct(product); upsellAdded.current = onAdded; }} />
                 <div className="border-t border-neutral-200 pt-3 space-y-3">
                   <div className="space-y-1 text-xs">
                     <div className="flex justify-between text-neutral-600">
@@ -1941,7 +1992,7 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
                       onChange={(e) => setPaymentMethod(e.target.value)}
                       className="w-full p-2.5 text-xs border border-emerald-300 rounded-lg text-neutral-800 bg-white font-medium focus:outline-emerald-600"
                     >
-                      <option value="⚡ Pix Instantâneo (Aprovação Automática)">
+                      <option value="⚡ Pix Instantâneo (Confirmação do Pagamento)">
                         ⚡ Pix Instantâneo (QR Code / Copia e Cola)
                       </option>
                       <option value="Pix no Recebimento">Pix na Entrega / Retirada</option>
@@ -1980,10 +2031,10 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
                         </div>
                         <div className="text-[11px] text-emerald-800 flex flex-wrap items-center justify-between gap-1 pt-1 border-t border-emerald-200/60">
                           <span>
-                            Beneficiário: <strong>{tenantPix.beneficiaryName}</strong>
+                            Restaurante: <strong>{tenant.name}</strong>
                           </span>
                           <span className="font-mono">
-                            Chave: <strong>{tenantPix.pixKey}</strong>
+                            O código Pix será exibido após registrar o pedido.
                           </span>
                         </div>
                       </div>

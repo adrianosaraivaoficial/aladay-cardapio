@@ -7,8 +7,6 @@ import {
   CheckCircle2,
   FileSpreadsheet,
   Info,
-  ChevronDown,
-  ChevronUp,
   CreditCard,
   Bike,
   ShoppingBag,

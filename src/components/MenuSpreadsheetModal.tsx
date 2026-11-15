@@ -16,7 +16,6 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import { Category, OptionGroup, Product, RestaurantTenant } from '../types';
-import * as XLSX from 'xlsx';
 
 interface MenuSpreadsheetModalProps {
   isOpen: boolean;
@@ -248,6 +247,7 @@ export async function readUploadedSpreadsheetFile(file: File): Promise<string> {
     fileNameLower.endsWith('.ods');
 
   if (isZipHeader || isOleHeader || isExcelExtension) {
+    const XLSX = await import('xlsx');
     const workbook = XLSX.read(buffer, { type: 'array' });
     const firstSheetName = workbook.SheetNames[0];
     if (!firstSheetName) {

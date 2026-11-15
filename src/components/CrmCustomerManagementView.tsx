@@ -1,8 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Users,
   Search,
-  Filter,
   MessageSquare,
   Receipt,
   Clock,
@@ -11,27 +10,20 @@ import {
   ShieldAlert,
   ArrowUpDown,
   Download,
-  Calendar,
-  CreditCard,
-  Bike,
-  ShoppingBag,
-  ExternalLink,
   X,
   FileText,
   Printer,
   ChevronRight,
   Sparkles,
-  Phone,
   UserCheck,
-  Tag,
-  AlertCircle,
 } from 'lucide-react';
-import { CustomerRecord, Order, RestaurantTenant } from '../types';
+import { AuthSession, CustomerRecord, Order, RestaurantTenant } from '../types';
 
 interface CrmCustomerManagementViewProps {
   tenant: RestaurantTenant;
   orders: Order[];
   customers: CustomerRecord[];
+  authSession?: AuthSession | null;
   onPrintOrder?: (order: Order) => void;
   onUpdateCustomerNote?: (customerId: string, note: string) => void;
 }
@@ -55,11 +47,16 @@ interface ReconciledCustomer {
   tier: 'vip' | 'frequent' | 'new';
   orders: Order[];
 }
+const normalizedCustomerPhone = (value: string) => {
+  const digits = value.replace(/\D/g, '');
+  return digits.length === 10 || digits.length === 11 ? `55${digits}` : digits;
+};
 
 export const CrmCustomerManagementView: React.FC<CrmCustomerManagementViewProps> = ({
   tenant,
   orders,
   customers,
+  authSession,
   onPrintOrder,
   onUpdateCustomerNote,
 }) => {
@@ -71,6 +68,17 @@ export const CrmCustomerManagementView: React.FC<CrmCustomerManagementViewProps>
   const [isEditingNote, setIsEditingNote] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
   const [copyToast, setCopyToast] = useState<string | null>(null);
+  const [persistedCustomers, setPersistedCustomers] = useState<Array<CustomerRecord & { version: number }>>([]);
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteError, setNoteError] = useState('');
+  useEffect(() => {
+    let active = true;
+    setPersistedCustomers([]); setCustomerNotesState({}); setSelectedCustomer(null); setNoteError('');
+    fetch(`/api/v1/tenants/${encodeURIComponent(tenant.slug)}/customers`, { headers: authSession?.token ? { Authorization: `Bearer ${authSession.token}` } : {} })
+      .then(async response => { const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Não foi possível carregar os clientes persistentes.'); if (active) setPersistedCustomers(data.data || []); })
+      .catch(e => { if (active) setNoteError(e.message); });
+    return () => { active = false; };
+  }, [tenant.slug, authSession?.token]);
 
   const formatBRL = (cents: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100);
@@ -81,8 +89,8 @@ export const CrmCustomerManagementView: React.FC<CrmCustomerManagementViewProps>
     const customerMap = new Map<string, ReconciledCustomer>();
 
     // 1. Seed from registered customers prop
-    customers.forEach((c) => {
-      const cleanPhone = c.phone.replace(/\D/g, '');
+    [...customers, ...persistedCustomers].forEach((c) => {
+      const cleanPhone = normalizedCustomerPhone(c.phone);
       customerMap.set(cleanPhone, {
         id: c.id,
         name: c.name,
@@ -105,7 +113,7 @@ export const CrmCustomerManagementView: React.FC<CrmCustomerManagementViewProps>
 
     // 2. Merge all orders for this tenant
     orders.forEach((order) => {
-      const cleanPhone = (order.customerPhone || '').replace(/\D/g, '');
+      const cleanPhone = normalizedCustomerPhone(order.customerPhone || '');
       if (!cleanPhone) return;
 
       let entry = customerMap.get(cleanPhone);
@@ -123,7 +131,7 @@ export const CrmCustomerManagementView: React.FC<CrmCustomerManagementViewProps>
           averageTicketCents: 0,
           firstOrderAt: order.createdAt,
           lastOrderAt: order.createdAt,
-          marketingConsent: true,
+          marketingConsent: false,
           notes: customerNotesState[`cust_${cleanPhone}`] ?? '',
           tier: 'new',
           orders: [],
@@ -171,7 +179,7 @@ export const CrmCustomerManagementView: React.FC<CrmCustomerManagementViewProps>
         tier,
       };
     });
-  }, [customers, orders, customerNotesState]);
+  }, [customers, persistedCustomers, orders, customerNotesState]);
 
   // Filters & Search
   const filteredCustomers = useMemo(() => {
@@ -212,7 +220,18 @@ export const CrmCustomerManagementView: React.FC<CrmCustomerManagementViewProps>
   }, [reconciledCustomers]);
 
   // Handle Note Save
-  const handleSaveNote = (customerId: string) => {
+  const handleSaveNote = async (customerId: string) => {
+    if (!selectedCustomer || noteSaving) return;
+    setNoteSaving(true); setNoteError('');
+    try {
+      const existing = persistedCustomers.find(c => normalizedCustomerPhone(c.phone) === selectedCustomer.phone);
+      const response = await fetch(`/api/v1/tenants/${encodeURIComponent(tenant.slug)}/customers`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json', ...(authSession?.token ? { Authorization: `Bearer ${authSession.token}` } : {}) },
+        body: JSON.stringify({ expectedVersion: existing?.version || 0, customer: { name: selectedCustomer.name, phone: selectedCustomer.phone, notes: noteDraft, marketingConsent: existing?.marketingConsent === true } }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || data.error || 'Não foi possível salvar a nota.');
+      setPersistedCustomers(previous => [...previous.filter(c => c.phone !== data.data.phone), data.data]);
     setCustomerNotesState((prev) => ({
       ...prev,
       [customerId]: noteDraft,
@@ -224,6 +243,7 @@ export const CrmCustomerManagementView: React.FC<CrmCustomerManagementViewProps>
       onUpdateCustomerNote(customerId, noteDraft);
     }
     setIsEditingNote(false);
+    } catch (e) { setNoteError(e instanceof Error ? e.message : 'Falha ao salvar nota.'); } finally { setNoteSaving(false); }
   };
 
   const handleOpenCustomerDetail = (cust: ReconciledCustomer) => {
@@ -260,6 +280,7 @@ export const CrmCustomerManagementView: React.FC<CrmCustomerManagementViewProps>
 
   return (
     <div className="space-y-6">
+      {noteError && <div role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{noteError}</div>}
       {/* Toast Notification */}
       {copyToast && (
         <div className="fixed bottom-4 right-4 z-50 bg-neutral-900 text-white px-4 py-2.5 rounded-lg shadow-lg text-xs font-medium animate-fadeIn flex items-center gap-2">
@@ -703,6 +724,7 @@ export const CrmCustomerManagementView: React.FC<CrmCustomerManagementViewProps>
                   )}
                 </div>
 
+                {noteError && <p role="alert" className="mb-2 text-sm text-rose-800">{noteError}</p>}
                 {isEditingNote ? (
                   <div className="space-y-2 pt-1">
                     <textarea
@@ -723,9 +745,10 @@ export const CrmCustomerManagementView: React.FC<CrmCustomerManagementViewProps>
                       <button
                         type="button"
                         onClick={() => handleSaveNote(selectedCustomer.id)}
+                        disabled={noteSaving}
                         className="px-3 py-1 text-xs font-semibold bg-neutral-900 text-white rounded hover:bg-neutral-800"
                       >
-                        Salvar Nota
+                        {noteSaving ? 'Salvando…' : 'Salvar Nota'}
                       </button>
                     </div>
                   </div>

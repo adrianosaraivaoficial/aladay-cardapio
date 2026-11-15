@@ -24,7 +24,7 @@ export function sanitizeEmvText(text: string, maxLength: number, fallback: strin
 
 /**
  * Validates standard Brazilian CPF mod-11 check digits so we can distinguish
- * an 11-digit CPF (e.g. 57471207272) from an 11-digit mobile phone (DDD + 9 digits).
+ * an 11-digit CPF from an 11-digit mobile phone (DDD + 9 digits).
  */
 export function isValidCpf(digits: string): boolean {
   const clean = digits.replace(/\D/g, '');
@@ -53,7 +53,7 @@ export function isValidCpf(digits: string): boolean {
  * - Random (EVP UUID): lowercase 36-char UUID with hyphens
  * - CPF: 11 pure digits (no dots/hyphens, no +55)
  * - CNPJ: 14 pure digits (no dots/slashes/hyphens)
- * - Phone: E.164 format starting with +55 (e.g., +5591981214188)
+ * - Phone: E.164 format starting with +55 (DDI 55, DDD and phone number)
  */
 export function formatPixKeyForBacen(
   rawKey: string,
@@ -62,7 +62,7 @@ export function formatPixKeyForBacen(
 ): { formattedKey: string; detectedType: 'cpf' | 'cnpj' | 'email' | 'phone' | 'random' } {
   const trimmed = (rawKey || '').trim();
   if (!trimmed) {
-    return { formattedKey: '+5511999999999', detectedType: 'phone' };
+    return { formattedKey: '', detectedType: 'phone' };
   }
 
   // 1. Email key
@@ -132,8 +132,7 @@ export function resolveTenantPixCredentials(tenant: RestaurantTenant): ResolvedT
   const rawKey = (
     tenant.pixKey ||
     tenant.pixConfig?.pixKey ||
-    tenant.phone ||
-    '+5511999999999'
+    ''
   ).trim();
 
   const rawBeneficiary = (
@@ -190,6 +189,7 @@ export function generateDynamicPixPayload(params: {
 }): string {
   const amountStr = (Math.max(1, params.amountCents) / 100).toFixed(2);
   const { formattedKey } = formatPixKeyForBacen(params.pixKey, params.pixKeyType, params.tenantPhone);
+  if (!formattedKey) throw new Error('Chave Pix não configurada.');
   const emvMerchantName = sanitizeEmvText(params.beneficiaryName, 25, 'RESTAURANTE');
   const emvMerchantCity = sanitizeEmvText(params.merchantCity || 'BELEM', 15, 'BELEM');
   const cleanTxid = (params.txid || 'PEDIDO').replace(/[^a-zA-Z0-9]/g, '').slice(0, 25) || 'PEDIDO';

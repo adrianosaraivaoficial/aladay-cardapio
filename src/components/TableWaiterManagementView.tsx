@@ -8,13 +8,9 @@ import {
   Printer,
   Users,
   Search,
-  Clock,
   CheckCircle2,
-  Sparkles,
   Copy,
-  Trash2,
   Receipt,
-  CreditCard,
   BellRing,
   ChefHat,
   ExternalLink,
@@ -23,6 +19,7 @@ import {
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import {
+  AuthSession,
   Category,
   Order,
   OrderItem,
@@ -30,14 +27,16 @@ import {
   Product,
   RestaurantTenant,
 } from '../types';
+import { buildPublicTableUrl } from '../utils/publicMenuUrl';
 
 interface TableWaiterManagementViewProps {
   tenant: RestaurantTenant;
+  authSession?: AuthSession | null;
   categories: Category[];
   products: Product[];
   orders: Order[];
   onAddOrder: (newOrder: Order) => void;
-  onUpdateOrderStatus: (orderId: string, nextStatus: OrderStatus) => void;
+  onUpdateOrderStatus: (orderId: string, nextStatus: OrderStatus) => void | Promise<boolean>;
   onUpdateTenant: (updated: RestaurantTenant) => void;
   onPrintOrder?: (order: Order) => void;
 }
@@ -53,6 +52,7 @@ const DEFAULT_WAITERS = [
 
 export const TableWaiterManagementView: React.FC<TableWaiterManagementViewProps> = ({
   tenant,
+  authSession,
   categories,
   products,
   orders,
@@ -66,9 +66,38 @@ export const TableWaiterManagementView: React.FC<TableWaiterManagementViewProps>
   const [tableFilter, setTableFilter] = useState<TableStatusFilter>('all');
   const [rightPanelTab, setRightPanelTab] = useState<'launch' | 'bill' | 'qrcode'>('launch');
 
-  // Table states tracked locally for "Pediu a Conta" or "Servido"
+  // Persistent tenant-scoped table state, protected by optimistic versions.
   const [tablesRequestingBill, setTablesRequestingBill] = useState<Record<string, boolean>>({});
   const [servedOrderIds, setServedOrderIds] = useState<Record<string, boolean>>({});
+  const [tableStates, setTableStates] = useState<Record<string, { version: number; servedOrderIds: string[] }>>({});
+  const [stateBusy, setStateBusy] = useState(false);
+  const [accountClosing, setAccountClosing] = useState(false);
+  const [stateError, setStateError] = useState('');
+  const canPersistState = ['SUPER_ADMIN', 'TENANT_OWNER'].includes(authSession?.user.role || '');
+  const stateHeaders = { 'Content-Type': 'application/json', ...(authSession?.token ? { Authorization: `Bearer ${authSession.token}` } : {}) };
+  useEffect(() => {
+    let active = true;
+    setTableStates({}); setTablesRequestingBill({}); setServedOrderIds({}); setStateError('');
+    if (!canPersistState) return;
+    setStateBusy(true);
+    Promise.all(Array.from({ length: totalTables }, (_, i) => i + 1).map(async number => {
+      const response = await fetch(`/api/v1/tenants/${encodeURIComponent(tenant.slug)}/tables/${number}/state`, { headers: stateHeaders });
+      const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Não foi possível carregar o estado das mesas.'); return result.data as { tableNumber: number; billRequested: boolean; servedOrderIds: string[]; version: number };
+    })).then(rows => { if (!active) return; const states: typeof tableStates = {}; const bills: Record<string, boolean> = {}; const served: Record<string, boolean> = {}; rows.forEach(row => { const key = String(row.tableNumber).padStart(2, '0'); states[key] = row; bills[key] = row.billRequested; row.servedOrderIds.forEach(id => { served[id] = true; }); }); setTableStates(states); setTablesRequestingBill(bills); setServedOrderIds(served); }).catch(e => { if (active) setStateError(e.message); }).finally(() => { if (active) setStateBusy(false); });
+    return () => { active = false; };
+  }, [tenant.slug, totalTables, authSession?.token]);
+  async function persistTableState(patch: { billRequested?: boolean; servedOrderIds?: string[] }) {
+    if (!canPersistState || stateBusy || !tableStates[selectedTableNumber]) return false;
+    setStateBusy(true); setStateError('');
+    try {
+      const response = await fetch(`/api/v1/tenants/${encodeURIComponent(tenant.slug)}/tables/${Number(selectedTableNumber)}/state`, { method: 'PATCH', headers: stateHeaders, body: JSON.stringify({ expectedVersion: tableStates[selectedTableNumber].version, ...patch }) });
+      const result = await response.json(); if (!response.ok) throw new Error(result.message || result.error || 'Estado alterado por outro operador. Recarregue as mesas e tente novamente.');
+      setTableStates(previous => ({ ...previous, [selectedTableNumber]: result.data }));
+      setTablesRequestingBill(previous => ({ ...previous, [selectedTableNumber]: result.data.billRequested }));
+      setServedOrderIds(previous => { const next = { ...previous }; tableStates[selectedTableNumber].servedOrderIds.forEach(id => { delete next[id]; }); result.data.servedOrderIds.forEach((id: string) => { next[id] = true; }); return next; });
+      return true;
+    } catch (e) { setStateError(e instanceof Error ? e.message : 'Falha ao salvar estado da mesa.'); return false; } finally { setStateBusy(false); }
+  }
 
   // Waiter Order Launch State
   const [selectedWaiter, setSelectedWaiter] = useState<string>(DEFAULT_WAITERS[0]);
@@ -187,13 +216,7 @@ export const TableWaiterManagementView: React.FC<TableWaiterManagementViewProps>
 
   // Table QR Code URL
   const selectedTableMenuUrl = useMemo(() => {
-    const base =
-      typeof window !== 'undefined'
-        ? `${window.location.origin}${window.location.pathname}`
-        : `https://aladay.com.br/`;
-    return `${base}?loja=${encodeURIComponent(tenant.slug)}&mesa=${encodeURIComponent(
-      selectedTableNumber
-    )}`;
+    return buildPublicTableUrl(tenant.slug, selectedTableNumber);
   }, [tenant.slug, selectedTableNumber]);
 
   useEffect(() => {
@@ -213,14 +236,9 @@ export const TableWaiterManagementView: React.FC<TableWaiterManagementViewProps>
     if (!isBatchPlaquesModalOpen) return;
     let active = true;
     setIsGeneratingBatchQrs(true);
-    const base =
-      typeof window !== 'undefined'
-        ? `${window.location.origin}${window.location.pathname}`
-        : 'https://aladay.com.br/';
-
     Promise.all(
       tableNumbers.map(async (num) => {
-        const url = `${base}?loja=${encodeURIComponent(tenant.slug)}&mesa=${encodeURIComponent(num)}`;
+        const url = buildPublicTableUrl(tenant.slug, num);
         const qr = await QRCode.toDataURL(url, { width: 280, margin: 1 });
         return { num, qr };
       })
@@ -360,30 +378,28 @@ export const TableWaiterManagementView: React.FC<TableWaiterManagementViewProps>
   };
 
   // Mark a "ready" order from KDS as served at the table by the waiter
-  const handleMarkDishServedAtTable = (orderId: string, orderNum: number) => {
-    setServedOrderIds((prev) => ({ ...prev, [orderId]: true }));
+  const handleMarkDishServedAtTable = async (orderId: string, orderNum: number) => {
+    if (!await persistTableState({ servedOrderIds: [...new Set([...(tableStates[selectedTableNumber]?.servedOrderIds || []), orderId])] })) return;
     showNotice(
       `✅ Pedido #${orderNum} marcado como servido na Mesa ${selectedTableNumber}!`
     );
   };
 
   // Close & settle all active orders for the selected table
-  const handleCloseTableAccount = () => {
-    if (!currentTableData || currentTableData.orders.length === 0) return;
-
-    currentTableData.orders.forEach((order) => {
-      onUpdateOrderStatus(order.id, 'delivered');
-    });
-
-    setTablesRequestingBill((prev) => {
-      const next = { ...prev };
-      delete next[selectedTableNumber];
-      return next;
-    });
+  const handleCloseTableAccount = async () => {
+    if (!currentTableData || currentTableData.orders.length === 0 || accountClosing || stateBusy || !canPersistState || !tableStates[selectedTableNumber]) return;
+    setAccountClosing(true);
+    try {
+    for (const order of currentTableData.orders) {
+      const updated = await onUpdateOrderStatus(order.id, 'delivered');
+      if (updated === false) { setStateError('A conta não foi encerrada. Verifique os pagamentos e tente novamente.'); return; }
+    }
+    if (!await persistTableState({ billRequested: false, servedOrderIds: [] })) return;
 
     showNotice(
-      `🎉 Conta da Mesa ${selectedTableNumber} encerrada via "${closingPaymentMethod}"! A Mesa ${selectedTableNumber} já está Livre e os valores entraram nos Relatórios.`
+      `Conta da Mesa ${selectedTableNumber} encerrada via "${closingPaymentMethod}". Pedidos concluídos e mesa liberada.`
     );
+    } catch (e) { setStateError(e instanceof Error ? e.message : 'Não foi possível concluir os pedidos da mesa.'); } finally { setAccountClosing(false); }
   };
 
   // Aggregated bill calculations for currentTableData
@@ -438,6 +454,8 @@ export const TableWaiterManagementView: React.FC<TableWaiterManagementViewProps>
 
   return (
     <div className="space-y-6">
+      {stateError && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{stateError}</p>}
+      {stateBusy && <p role="status" className="text-sm text-slate-600">Sincronizando estado das mesas…</p>}
       {/* Top Header & Saloon KPI Strip */}
       <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -713,12 +731,9 @@ export const TableWaiterManagementView: React.FC<TableWaiterManagementViewProps>
             {currentTableData && currentTableData.orders.length > 0 && (
               <button
                 type="button"
-                onClick={() => {
-                  setTablesRequestingBill((prev) => ({
-                    ...prev,
-                    [selectedTableNumber]: !prev[selectedTableNumber],
-                  }));
-                  setRightPanelTab('bill');
+                disabled={stateBusy || !canPersistState || !tableStates[selectedTableNumber]}
+                onClick={async () => {
+                  if (await persistTableState({ billRequested: !tablesRequestingBill[selectedTableNumber] })) setRightPanelTab('bill');
                 }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
                   tablesRequestingBill[selectedTableNumber]
@@ -964,6 +979,7 @@ export const TableWaiterManagementView: React.FC<TableWaiterManagementViewProps>
                         </div>
                         <button
                           type="button"
+                          disabled={stateBusy || accountClosing || !canPersistState || !tableStates[selectedTableNumber]}
                           onClick={() =>
                             handleMarkDishServedAtTable(
                               readyOrder.id,
@@ -1108,6 +1124,7 @@ export const TableWaiterManagementView: React.FC<TableWaiterManagementViewProps>
                       <button
                         type="button"
                         onClick={handleCloseTableAccount}
+                        disabled={stateBusy || accountClosing || !canPersistState || !tableStates[selectedTableNumber]}
                         className="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
                       >
                         <Check className="w-4 h-4" />
@@ -1206,6 +1223,7 @@ export const TableWaiterManagementView: React.FC<TableWaiterManagementViewProps>
                     <img
                       src={tenant.logoUrl}
                       alt={tenant.name}
+                      decoding="async"
                       className="w-8 h-8 rounded-lg object-cover border border-slate-200 shadow-2xs"
                     />
                   ) : (
@@ -1397,10 +1415,6 @@ export const TableWaiterManagementView: React.FC<TableWaiterManagementViewProps>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                   {tableNumbers.map((num) => {
                     const qrUrl = allTablesQrMap[num];
-                    const tableUrl = typeof window !== 'undefined'
-                      ? `${window.location.origin}/?loja=${encodeURIComponent(tenant.slug)}&mesa=${num}`
-                      : `https://aladay.com.br/?loja=${tenant.slug}&mesa=${num}`;
-
                     return (
                       <div
                         key={num}
@@ -1411,6 +1425,8 @@ export const TableWaiterManagementView: React.FC<TableWaiterManagementViewProps>
                             <img
                               src={tenant.logoUrl}
                               alt={tenant.name}
+                              loading="lazy"
+                              decoding="async"
                               className="w-7 h-7 rounded-lg object-cover border border-slate-200"
                             />
                           ) : (

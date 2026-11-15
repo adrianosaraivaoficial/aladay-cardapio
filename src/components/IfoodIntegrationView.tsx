@@ -15,7 +15,6 @@ import {
   AlertCircle,
   Check,
   LayoutGrid,
-  BarChart3,
 } from 'lucide-react';
 import { IfoodIntegrationConfig, Order, Product, RestaurantTenant, WebhookLogEvent } from '../types';
 
@@ -245,10 +244,10 @@ export const IfoodIntegrationView: React.FC<IfoodIntegrationViewProps> = ({
           orderNumber: Number(displayId),
           tenantId: tenant.id,
           tenantSlug: tenant.slug,
-          customerName: 'Mariana Costa (via iFood)',
-          customerPhone: '5511994128831',
+          customerName: 'Cliente de demonstração (via iFood)',
+          customerPhone: '',
           type: 'delivery',
-          deliveryAddress: 'Rua dos Pinheiros, 840 - Apto 62',
+          deliveryAddress: 'Rua Exemplo, 100 - Bairro Exemplo',
           deliveryZoneName: 'Entrega iFood',
           estimatedMinutes: 35,
           items: [

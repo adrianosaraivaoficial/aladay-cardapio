@@ -6,18 +6,14 @@ import {
   Clock,
   Zap,
   CheckCircle2,
-  ExternalLink,
   ShieldCheck,
   ArrowRight,
   RefreshCw,
   AlertCircle,
-  Smartphone,
-  ChevronRight,
-  Flame,
   X
 } from 'lucide-react';
 import { Order, RestaurantTenant, PixTransaction } from '../types';
-import { generateDynamicPixPayload, resolveTenantPixCredentials } from '../utils/pixPayloadGenerator';
+import { resolveTenantPixCredentials } from '../utils/pixPayloadGenerator';
 import QRCode from 'qrcode';
 
 interface PixPaymentModalProps {
@@ -39,6 +35,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
 }) => {
   const [transaction, setTransaction] = useState<PixTransaction | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [chargeError, setChargeError] = useState('');
   const [copiedCode, setCopiedCode] = useState(false);
   const [isSimulatingPayment, setIsSimulatingPayment] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'approved' | 'expired'>('pending');
@@ -56,6 +53,10 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
 
     let isMounted = true;
     setIsLoading(true);
+    setTransaction(null);
+    setLocalQrDataUrl('');
+    setChargeError('');
+    setPaymentStatus('pending');
 
     const initPixCharge = async () => {
       try {
@@ -64,20 +65,12 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             orderId: order.id,
-            amountCents: order.totalCents,
-            tenantSlug: tenant.slug,
-            pixKey: tenantPix.pixKey,
-            pixKeyType: tenantPix.pixKeyType,
-            beneficiaryName: tenantPix.beneficiaryName,
-            merchantName: tenantPix.merchantNameEmv,
-            merchantCity: tenantPix.merchantCityEmv,
-            customerName: order.customerName,
-            customerPhone: order.customerPhone,
           }),
         });
 
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'Não foi possível obter a cobrança Pix.');
         if (res.ok) {
-          const json = await res.json();
           if (isMounted && json.data) {
             setTransaction(json.data);
             if (json.data.status === 'PAID') {
@@ -86,7 +79,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
           }
         }
       } catch (err) {
-        console.error('Failed to create Pix charge, generating local EMV payload:', err);
+        if (isMounted) setChargeError(err instanceof Error ? err.message : 'Cobrança Pix indisponível. Tente novamente.');
       } finally {
         if (isMounted) setIsLoading(false);
       }
@@ -123,10 +116,11 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
           if (json.status === 'PAID') {
             clearInterval(pollIntervalRef.current);
             setPaymentStatus('approved');
-            const updated = json.order || {
+            const updated = {
               ...order,
-              paymentStatus: 'paid_online',
-              status: 'confirmed',
+              ...(json.order || {}),
+              paymentStatus: 'paid_online' as const,
+
             };
             setApprovedOrder(updated);
             onPaymentApproved(updated);
@@ -150,7 +144,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
       setTimeLeftSeconds((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          setPaymentStatus('expired');
+          // A static bank Pix is not cancelled by a browser timer.
           return 0;
         }
         return prev - 1;
@@ -162,22 +156,11 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
 
   const effectivePixKey = transaction?.pixKey || tenantPix.pixKey;
   const effectiveBeneficiaryName =
-    transaction?.beneficiaryName || transaction?.merchantName || tenantPix.beneficiaryName;
-  const effectiveMerchantCity = transaction?.merchantCity || tenantPix.merchantCityEmv;
-
-  // Always generate a valid BACEN EMV payload with the current tenant's Chave Pix and Nome do Beneficiário
-  const pixPayload = generateDynamicPixPayload({
-    pixKey: effectivePixKey,
-    pixKeyType: tenantPix.pixKeyType,
-    tenantPhone: tenant.phone,
-    beneficiaryName: effectiveBeneficiaryName,
-    merchantCity: effectiveMerchantCity,
-    amountCents: order.totalCents,
-    txid: transaction?.txid || order.id || `PEDIDO${order.orderNumber}`,
-  });
+    transaction?.beneficiaryName || transaction?.merchantName || tenant.name;
+  const pixPayload = transaction?.pixCopiaECola || '';
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !pixPayload) return;
     let active = true;
     QRCode.toDataURL(pixPayload, { width: 260, margin: 2 })
       .then((url) => {
@@ -203,6 +186,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
 
   const handleCopyCode = async () => {
     try {
+      if (!pixPayload) return;
       await navigator.clipboard.writeText(pixPayload);
       setCopiedCode(true);
       setTimeout(() => setCopiedCode(false), 3000);
@@ -213,55 +197,21 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
     }
   };
 
-  // Customer confirmation that Pix payment was completed in their bank app
+  // This action only polls settlement recorded by the backend.
   const handleConfirmPixPaid = async () => {
+    if (!transaction?.txid) return;
     setIsSimulatingPayment(true);
     try {
-      const res = await fetch('/api/v1/pix/simulate-payment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          txid: transaction?.txid || `PIX_${Date.now()}_${order.orderNumber}`,
-          orderId: order.id,
-          tenantSlug: tenant.slug,
-          amountCents: order.totalCents,
-          customerName: order.customerName,
-          customerPhone: order.customerPhone,
-        }),
-      });
-
-      if (res.ok) {
-        const json = await res.json();
-        setPaymentStatus('approved');
-        const updated = json.data?.order || {
-          ...order,
-          paymentStatus: 'paid_online',
-          status: 'confirmed',
-        };
-        setApprovedOrder(updated);
-        onPaymentApproved(updated);
-      } else {
-        setPaymentStatus('approved');
-        const updated: Order = {
-          ...order,
-          paymentStatus: 'paid_online',
-          status: 'confirmed',
-        };
-        setApprovedOrder(updated);
-        onPaymentApproved(updated);
+      const response = await fetch(`/api/v1/pix/${encodeURIComponent(transaction.txid)}/status`);
+      const result = await response.json();
+      if (!response.ok || result.status !== 'PAID') {
+        setChargeError('Pagamento ainda não confirmado. Aguarde a compensação do Pix.');
+        return;
       }
-    } catch {
-      setPaymentStatus('approved');
-      const updated: Order = {
-        ...order,
-        paymentStatus: 'paid_online',
-        status: 'confirmed',
-      };
-      setApprovedOrder(updated);
-      onPaymentApproved(updated);
-    } finally {
-      setIsSimulatingPayment(false);
-    }
+      const updated: Order = { ...order, ...result.order, paymentStatus: 'paid_online' };
+      setPaymentStatus('approved'); setApprovedOrder(updated); onPaymentApproved(updated);
+    } catch { setChargeError('Não foi possível consultar o pagamento. Tente novamente.'); }
+    finally { setIsSimulatingPayment(false); }
   };
 
   return (
@@ -384,7 +334,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
                 <div className="text-right">
                   <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider flex items-center gap-1 justify-end">
                     <Clock className="w-3 h-3 text-amber-500" />
-                    Válido por
+                    Tempo de espera
                   </span>
                   <p className="text-xs font-mono font-bold text-amber-600">{formatMinutes(timeLeftSeconds)}</p>
                 </div>
@@ -406,14 +356,15 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
                     </p>
                   </div>
                   <div>
-                    <span className="text-[10px] text-emerald-700 block">Chave Pix:</span>
+                    <span className="text-[10px] text-emerald-700 block">Pagamento:</span>
                     <p className="font-mono font-bold text-neutral-900 text-xs truncate" title={effectivePixKey}>
-                      {effectivePixKey}
+                      Confira o favorecido no seu banco.
                     </p>
                   </div>
                 </div>
               </div>
 
+              {chargeError && <p role="alert" className="text-sm text-rose-700">{chargeError}</p>}
               {/* QR Code Container */}
               <div className="bg-neutral-50 p-4 rounded-2xl border border-neutral-200 flex flex-col items-center justify-center relative">
                 {isLoading && !qrCodeUrl ? (
@@ -421,7 +372,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
                     <RefreshCw className="w-6 h-6 animate-spin text-emerald-600" />
                     <span className="text-xs">Gerando QR Code Pix...</span>
                   </div>
-                ) : (
+                ) : qrCodeUrl ? (
                   <div className="bg-white p-3 rounded-xl shadow-xs border border-neutral-200 relative group">
                     <img
                       src={qrCodeUrl}
@@ -429,7 +380,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
                       className="w-48 h-48 rounded-lg object-contain"
                     />
                   </div>
-                )}
+                ) : <p className="text-sm text-neutral-600">Cobrança indisponível.</p>}
 
                 <div className="mt-3 flex items-center gap-2 text-[11px] text-neutral-600">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />

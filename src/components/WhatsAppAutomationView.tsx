@@ -4,23 +4,15 @@ import {
   QrCode,
   RefreshCw,
   CheckCircle2,
-  Phone,
   Check,
   Copy,
   Terminal,
   Server,
-  Play,
-  Pause,
   Send,
   Sparkles,
-  Layers,
-  ArrowRight,
-  ExternalLink,
   Bot,
   User,
   Sliders,
-  Settings,
-  HelpCircle,
   FileCode,
   ShieldCheck,
   Clock,
@@ -28,16 +20,15 @@ import {
   Smartphone,
   Radio,
   Zap,
-  Filter,
   Eye,
   LogOut,
-  BatteryCharging,
   Database,
   Loader2
 } from 'lucide-react';
 import { Order, RestaurantTenant, WebhookLogEvent, EvolutionQrConnectResponse, AuthSession } from '../types';
 import { NotificationTemplatesEditor } from './NotificationTemplatesEditor';
 import { WhatsAppQrPairingModal } from './WhatsAppQrPairingModal';
+import { buildPublicMenuUrl } from '../utils/publicMenuUrl';
 
 interface WhatsAppAutomationViewProps {
   tenant: RestaurantTenant;
@@ -86,15 +77,12 @@ export const WhatsAppAutomationView: React.FC<WhatsAppAutomationViewProps> = ({
   );
   const [evolutionApiKey, setEvolutionApiKey] = useState('');
   const [n8nWebhookUrl, setN8nWebhookUrl] = useState(
-    () => `https://agencia-n8n.2eoc7n.easypanel.host/webhook/cardapio-${tenant.slug}`
+    () => `https://integration.example.invalid${tenant.slug}`
   );
-  const [isAutoReplyActive, setIsAutoReplyActive] = useState(tenant.botAutoReplyEnabled ?? true);
+  const [isAutoReplyActive] = useState(tenant.botAutoReplyEnabled ?? true);
 
   // Template messages state
-  const publicStoreUrl =
-    typeof window !== 'undefined'
-      ? `${window.location.origin}${window.location.pathname}?loja=${encodeURIComponent(tenant.slug)}`
-      : `https://aladay.com.br/?loja=${encodeURIComponent(tenant.slug)}`;
+  const publicStoreUrl = buildPublicMenuUrl(tenant.slug);
 
   const [welcomeTemplate, setWelcomeTemplate] = useState(
     tenant.botWelcomeMessage ||
@@ -113,7 +101,7 @@ export const WhatsAppAutomationView: React.FC<WhatsAppAutomationViewProps> = ({
 
   const normalizeBrPhone = useCallback((raw?: string) => {
     const digits = String(raw || '').replace(/\D/g, '').replace(/^0+/, '');
-    if (!digits) return '5591981214188';
+    if (!digits) return '';
     if (digits.length === 10 || digits.length === 11) {
       return `55${digits}`;
     }
@@ -127,7 +115,7 @@ export const WhatsAppAutomationView: React.FC<WhatsAppAutomationViewProps> = ({
   const [copiedEmbeddedCode, setCopiedEmbeddedCode] = useState(false);
   const [isSimulatingEmbeddedScan, setIsSimulatingEmbeddedScan] = useState(false);
   const [isDisconnectingEmbedded, setIsDisconnectingEmbedded] = useState(false);
-  const [embeddedPhoneInput, setEmbeddedPhoneInput] = useState(() => normalizeBrPhone(tenant.phone || '5591981214188'));
+  const [embeddedPhoneInput, setEmbeddedPhoneInput] = useState(() => normalizeBrPhone(tenant.phone || ''));
   const [embeddedPairingMode, setEmbeddedPairingMode] = useState<'qr' | 'code'>('qr');
   const [embeddedErrorNotice, setEmbeddedErrorNotice] = useState<string | null>(null);
   const [inlineGlobalApiKey, setInlineGlobalApiKey] = useState(tenant.evolutionApiKey || '');
@@ -347,7 +335,7 @@ export const WhatsAppAutomationView: React.FC<WhatsAppAutomationViewProps> = ({
   const handleEmbeddedSimulateScan = async () => {
     setIsSimulatingEmbeddedScan(true);
     try {
-      const normalized = normalizeBrPhone(embeddedPhoneInput || tenant.phone || '5591981214188');
+      const normalized = normalizeBrPhone(embeddedPhoneInput || tenant.phone || '');
       setEmbeddedPhoneInput(normalized);
       const res = await fetch(`/api/v1/evolution/instance/${tenant.evolutionInstanceId || 'aladay'}/simulate-scan`, {
         method: 'POST',
@@ -420,8 +408,8 @@ export const WhatsAppAutomationView: React.FC<WhatsAppAutomationViewProps> = ({
   const [webhookBindFeedback, setWebhookBindFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Live n8n Agent Tester State
-  const [agentTestCustomerName, setAgentTestCustomerName] = useState('Adriano Saraiva (Cliente do Restaurante)');
-  const [agentTestPhone, setAgentTestPhone] = useState('5591988887777');
+  const [agentTestCustomerName, setAgentTestCustomerName] = useState('Cliente de demonstração');
+  const [agentTestPhone, setAgentTestPhone] = useState('');
   const [agentTestMessage, setAgentTestMessage] = useState('Boa noite! Vocês estão abertos? Quero ver o cardápio digital e os preços de hoje.');
   const [dispatchToRemoteN8n, setDispatchToRemoteN8n] = useState(false);
   const [isTestingN8nAgent, setIsTestingN8nAgent] = useState(false);
@@ -435,7 +423,7 @@ export const WhatsAppAutomationView: React.FC<WhatsAppAutomationViewProps> = ({
   // Live Knowledge Base Editor State
   const [isKbModalOpen, setIsKbModalOpen] = useState(false);
   const [kbContent, setKbContent] = useState('');
-  const [kbVersion, setKbVersion] = useState('4.0 (Novembro 2026)');
+  const [kbVersion, setKbVersion] = useState('4.1 (Novembro 2026)');
   const [isLoadingKb, setIsLoadingKb] = useState(false);
   const [isSavingKb, setIsSavingKb] = useState(false);
   const [kbSaveFeedback, setKbSaveFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -483,7 +471,7 @@ export const WhatsAppAutomationView: React.FC<WhatsAppAutomationViewProps> = ({
       if (res.ok && data?.ok) {
         setKbSaveFeedback({
           type: 'success',
-          message: data.message || 'Base de Conhecimento v4.0 salva e atualizada em tempo real!',
+          message: data.message || 'Base de Conhecimento v4.1 salva e atualizada em tempo real!',
         });
       } else {
         setKbSaveFeedback({
@@ -501,7 +489,7 @@ export const WhatsAppAutomationView: React.FC<WhatsAppAutomationViewProps> = ({
     }
   };
 
-  const defaultSdrSystemPrompt = `Você é o Consultor Comercial Especialista (SDR / Closer) da Aladay Cardápios Digitais (${appOriginUrl}) — Base de Conhecimento v4.0.
+  const defaultSdrSystemPrompt = `Você é o Consultor Comercial Especialista (SDR / Closer) da Aladay Cardápios Digitais (${appOriginUrl}) — Base de Conhecimento v4.1.
 WhatsApp Oficial de Suporte e Vendas: +55 (91) 3197-6334 (https://wa.me/559131976334).
 
 ⚡ DIRETRIZES DE NATURALIDADE, ÁUDIO E ANTI-REPETIÇÃO NO WHATSAPP:
@@ -527,7 +515,7 @@ Este workflow no n8n é MULTI-TENANT: você identifica automaticamente qual rest
    - Se a mensagem vier marcada como [🎙️ ÁUDIO DE VOZ TRANSCRITO], o cliente enviou um áudio no WhatsApp. Responda com naturalidade (ex: "Ouvi seu áudio! ...") atendendo exatamente ao que ele pediu.
 3. PEDIDOS ANTERIORES ("QUERO AQUELE DE ONTEM" / "O MESMO DA ÚLTIMA VEZ"):
    - Quando o cliente disser "quero aquele de ontem", "o mesmo da última vez", "repetir meu pedido" ou "o de sempre", consulte a seção "=== HISTÓRICO E PEDIDO DE ONTEM DESTE CLIENTE ===".
-   - Cite os itens exatos e o valor do pedido anterior dele e envie o "Link Direto p/ Repetir na Sacola em 1 Clique" (?loja=...&repetir=...), explicando que ao clicar a sacola já abre pronta com esses itens!
+   - Cite os itens exatos e o valor do pedido anterior dele e envie o "Link Direto p/ Repetir na Sacola em 1 Clique" (/cardapio/slug?repetir=...), explicando que ao clicar a sacola já abre pronta com esses itens!
 4. MANUTENÇÃO DO CONTEXTO DA CONVERSA:
    - Use o histórico da conversa para entender referências como "quero 2 desse", "e quanto fica com entrega?", "tem de frango?", calculando o valor com base na tabela de preços ao vivo.
 5. BLOCO ÚNICO E CONCISO:
@@ -545,11 +533,11 @@ Este workflow no n8n é MULTI-TENANT: você identifica automaticamente qual rest
       const clean = rawPath.replace(/^\/+|\/+$/g, '').trim() || `cardapio-${tenant.slug}`;
       setN8nWebhookPath(clean);
       setN8nWebhookUrl((prev) => {
-        const base = (prev || 'https://agencia-n8n.2eoc7n.easypanel.host/webhook/saas')
+        const base = (prev || 'https://integration.example.invalid')
           .trim()
           .replace(/\/webhook(-test)?\/.*$/, '')
           .replace(/\/+$/, '');
-        return `${base || 'https://agencia-n8n.2eoc7n.easypanel.host'}/webhook/${clean}`;
+        return `${base || 'https://integration.example.invalid'}/webhook/${clean}`;
       });
     },
     [tenant.slug]
@@ -570,17 +558,17 @@ Este workflow no n8n é MULTI-TENANT: você identifica automaticamente qual rest
     setN8nAgentMode(mode);
     if (mode === 'sdr_aladay') {
       setAgentSystemPrompt(defaultSdrSystemPrompt);
-      setAgentTestCustomerName('Carlos Mendes (Dono de Hamburgueria)');
+      setAgentTestCustomerName('Responsável de demonstração');
       setAgentTestMessage('Olá! Gostaria de saber quanto custa o sistema da Aladay e se vocês cobram comissão por pedido.');
       syncWebhookPathAndUrl('sdr-aladay');
     } else if (mode === 'restaurante_ia') {
       setAgentSystemPrompt(defaultRestaurantSystemPrompt);
-      setAgentTestCustomerName('Izabel Saraiva');
+      setAgentTestCustomerName('Cliente Exemplo');
       setAgentTestMessage('Oi! Quero pedir aquele mesmo de ontem, por favor!');
       syncWebhookPathAndUrl(`cardapio-${tenant.slug}`);
     } else {
       setAgentSystemPrompt(defaultRestaurantSystemPrompt);
-      setAgentTestCustomerName('Izabel Saraiva');
+      setAgentTestCustomerName('Cliente Exemplo');
       setAgentTestMessage('Oi! Quero pedir aquele mesmo de ontem, por favor!');
       syncWebhookPathAndUrl(`auto-${tenant.slug}`);
     }
@@ -596,7 +584,7 @@ Este workflow no n8n é MULTI-TENANT: você identifica automaticamente qual rest
 
   // Build the dynamic n8n Workflow JSON according to the selected mode (Single Multi-Tenant Workflow for all restaurants)
   const n8nWorkflowJSON = React.useMemo(() => {
-    const cleanEvoUrl = (evolutionUrl || 'https://agencia-evolution-api.2eoc7n.easypanel.host').replace(/\/$/, '');
+    const cleanEvoUrl = (evolutionUrl || 'https://integration.example.invalid').replace(/\/$/, '');
     const cleanInstance = tenant.evolutionInstanceId || 'aladay';
     const cleanPath = (n8nWebhookPath || `cardapio-${tenant.slug}`).replace(/^\//, '');
     const safeIdSuffix = cleanPath.replace(/[^a-zA-Z0-9_-]/g, '-');
@@ -1090,7 +1078,9 @@ Este workflow no n8n é MULTI-TENANT: você identifica automaticamente qual rest
 
   const handleRefreshLogs = async () => {
     try {
-      const res = await fetch(`/api/v1/webhooks/logs?instance=${tenant.evolutionInstanceId}`);
+      const res = await fetch(`/api/v1/webhooks/logs?instance=${tenant.evolutionInstanceId}`, {
+        headers: authSession?.token ? { Authorization: `Bearer ${authSession.token}` } : {},
+      });
       if (res.ok) {
         const json = await res.json();
         if (json.data && Array.isArray(json.data) && json.data.length > 0) {
@@ -1110,7 +1100,10 @@ Este workflow no n8n é MULTI-TENANT: você identifica automaticamente qual rest
     try {
       const res = await fetch('/api/v1/webhooks/test-dispatch', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authSession?.token ? { Authorization: `Bearer ${authSession.token}` } : {}),
+        },
         body: JSON.stringify({
           instance: tenant.evolutionInstanceId,
           tenantSlug: tenant.slug,
@@ -1180,7 +1173,7 @@ Este workflow no n8n é MULTI-TENANT: você identifica automaticamente qual rest
         body: JSON.stringify({
           tenantSlug: tenant.slug,
           customerName: 'Cliente WhatsApp',
-          customerPhone: '5511999998888',
+          customerPhone: '',
           messageText: trimmedMsg,
         }),
       });
@@ -1650,7 +1643,7 @@ Este workflow no n8n é MULTI-TENANT: você identifica automaticamente qual rest
                           value={embeddedPhoneInput}
                           onChange={(e) => setEmbeddedPhoneInput(e.target.value)}
                           onBlur={() => setEmbeddedPhoneInput(normalizeBrPhone(embeddedPhoneInput))}
-                          placeholder="5591981214188"
+                          placeholder="Informe DDI, DDD e número"
                           className="w-full p-2 bg-neutral-900 border border-neutral-600 rounded-lg text-xs font-mono text-white"
                         />
                         <button
@@ -1884,6 +1877,7 @@ Este workflow no n8n é MULTI-TENANT: você identifica automaticamente qual rest
           tenant={tenant}
           orders={orders}
           isSuperAdmin={isSuperAdmin}
+          authToken={authSession?.token}
           onUpdateTenant={onUpdateTenant}
           onNavigateToLogs={isSuperAdmin ? () => setSubTab('logs') : undefined}
         />
@@ -2259,7 +2253,7 @@ Este workflow no n8n é MULTI-TENANT: você identifica automaticamente qual rest
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold rounded-xl transition-colors cursor-pointer"
                 >
                   <FileCode className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Ver / Editar Base de Conhecimento (v4.0)</span>
+                  <span>Ver / Editar Base de Conhecimento (v4.1)</span>
                 </button>
                 <a
                   href="/base-conhecimento-agente-ia-aladay.txt"
@@ -2267,7 +2261,7 @@ Este workflow no n8n é MULTI-TENANT: você identifica automaticamente qual rest
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-xl transition-colors"
                 >
                   <FileCode className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Baixar .TXT (v4.0)</span>
+                  <span>Baixar .TXT (v4.1)</span>
                 </a>
                 <button
                   type="button"
@@ -2355,7 +2349,7 @@ Este workflow no n8n é MULTI-TENANT: você identifica automaticamente qual rest
                 {isLoadingKb ? (
                   <div className="py-12 flex items-center justify-center gap-2 text-xs text-slate-400">
                     <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
-                    <span>Carregando Base de Conhecimento v4.0...</span>
+                    <span>Carregando Base de Conhecimento v4.1...</span>
                   </div>
                 ) : (
                   <textarea
@@ -2393,7 +2387,7 @@ Este workflow no n8n é MULTI-TENANT: você identifica automaticamente qual rest
                     </span>
                   </div>
                   <p className="text-[11px] text-neutral-600 leading-relaxed">
-                    Atende os clientes de <strong>{tenant.name}</strong> no WhatsApp: informa se está <strong>Aberto/Fechado</strong> e o horário da barra superior, responde preços reais do cardápio, envia o link direto <code className="font-mono">/?loja={tenant.slug}</code> e consulta status de pedidos.
+                    Atende os clientes de <strong>{tenant.name}</strong> no WhatsApp: informa se está <strong>Aberto/Fechado</strong> e o horário da barra superior, responde preços reais do cardápio, envia o link direto <code className="font-mono">/cardapio/{tenant.slug}</code> e consulta status de pedidos.
                   </p>
                 </button>
 
@@ -2416,7 +2410,7 @@ Este workflow no n8n é MULTI-TENANT: você identifica automaticamente qual rest
                     </span>
                   </div>
                   <p className="text-[11px] text-neutral-600 leading-relaxed">
-                    Consulta a API do <strong>{tenant.name}</strong> em tempo real sem gastar tokens OpenAI/Gemini: responde com horário atualizado, destaques com preços, link direto <code className="font-mono">/?loja={tenant.slug}</code> ou transfere no <strong>2</strong>.
+                    Consulta a API do <strong>{tenant.name}</strong> em tempo real sem gastar tokens OpenAI/Gemini: responde com horário atualizado, destaques com preços, link direto <code className="font-mono">/cardapio/{tenant.slug}</code> ou transfere no <strong>2</strong>.
                   </p>
                 </button>
 
@@ -2439,7 +2433,7 @@ Este workflow no n8n é MULTI-TENANT: você identifica automaticamente qual rest
                     </span>
                   </div>
                   <p className="text-[11px] text-neutral-600 leading-relaxed">
-                    Treinado com a Base de Conhecimento v4.0 para atender <strong>donos de restaurantes (Leads)</strong>, apresentar Mesas/Garçom e Integração iFood, e converter nos planos da plataforma.
+                    Treinado com a Base de Conhecimento v4.1 para atender <strong>donos de restaurantes (Leads)</strong>, apresentar Mesas/Garçom e Integração iFood, e converter nos planos da plataforma.
                   </p>
                 </button>
               </div>
@@ -2884,7 +2878,7 @@ Este workflow no n8n é MULTI-TENANT: você identifica automaticamente qual rest
               <div className="flex flex-wrap items-center gap-2 text-[11px]">
                 <span className="font-semibold text-slate-600">
                   {n8nAgentMode === 'sdr_aladay'
-                    ? 'Perguntas de Teste (SDR Comercial Aladay v4.0):'
+                    ? 'Perguntas de Teste (SDR Comercial Aladay v4.1):'
                     : `Cenários de Teste Naturais (${tenant.name}):`}
                 </span>
                 {n8nAgentMode === 'sdr_aladay' ? (
@@ -3488,6 +3482,7 @@ Este workflow no n8n é MULTI-TENANT: você identifica automaticamente qual rest
               )}
 
               {/* Ready-to-copy Environment Variables for EasyPanel Site App */}
+              <p className="text-xs text-neutral-600">Gere um segredo exclusivo no servidor com <code>openssl rand -hex 32</code> e configure JWT_SECRET diretamente no ambiente de deploy. Não reutilize valores de exemplo.</p>
               <div className="space-y-2 pt-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-neutral-900">
@@ -3496,7 +3491,7 @@ Este workflow no n8n é MULTI-TENANT: você identifica automaticamente qual rest
                   <button
                     type="button"
                     onClick={() => {
-                      const envText = `PORT=3000\nNODE_ENV=production\nDATABASE_URL=${generatedEasyPanelDbUrl}\nPGSSLMODE=disable\nJWT_SECRET=9f8d7a6b5c4e3f2a1b0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b\nEVOLUTION_API_URL=${evolutionUrl}\nEVOLUTION_API_KEY=${evolutionApiKey}\nN8N_WEBHOOK_URL=${n8nWebhookUrl}`;
+                      const envText = `PORT=3000\nNODE_ENV=production\nDATABASE_URL=${generatedEasyPanelDbUrl}\nPGSSLMODE=disable\n# Gere JWT_SECRET no servidor com: openssl rand -hex 32\nEVOLUTION_API_URL=${evolutionUrl}\nEVOLUTION_API_KEY=${evolutionApiKey}\nN8N_WEBHOOK_URL=${n8nWebhookUrl}`;
                       navigator.clipboard.writeText(envText);
                       setCopiedEnvBlock(true);
                       setTimeout(() => setCopiedEnvBlock(false), 3000);
@@ -3513,7 +3508,7 @@ Este workflow no n8n é MULTI-TENANT: você identifica automaticamente qual rest
 NODE_ENV=production
 DATABASE_URL=${generatedEasyPanelDbUrl}
 PGSSLMODE=disable
-JWT_SECRET=9f8d7a6b5c4e3f2a1b0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b
+# Gere JWT_SECRET no servidor com: openssl rand -hex 32
 EVOLUTION_API_URL=${evolutionUrl}
 EVOLUTION_API_KEY=${evolutionApiKey}
 N8N_WEBHOOK_URL=${n8nWebhookUrl}`}
@@ -3585,7 +3580,7 @@ REDIS_URI=redis://default:senha@redis:6379`}
                 <span className="font-bold text-neutral-900">Variáveis de Ambiente do n8n no Easypanel:</span>
               </div>
               <pre className="bg-neutral-900 text-neutral-200 p-3 rounded font-mono text-[11px] overflow-x-auto">
-{`WEBHOOK_URL=https://agencia-n8n.2eoc7n.easypanel.host/
+{`WEBHOOK_URL=https://integration.example.invalid
 N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
 EXECUTIONS_DATA_PRUNE=true
 EXECUTIONS_DATA_MAX_AGE=168`}

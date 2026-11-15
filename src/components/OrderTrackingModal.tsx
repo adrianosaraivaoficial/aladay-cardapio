@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { Clock, CheckCircle2, MapPin, Phone, MessageSquare, X, Copy, Check, ChevronRight, AlertCircle, ShoppingBag } from 'lucide-react';
+import { Clock, MapPin, MessageSquare, X, Copy, Check, ShoppingBag } from 'lucide-react';
 import { Order, OrderStatus, RestaurantTenant } from '../types';
-import { generateDynamicPixPayload, resolveTenantPixCredentials } from '../utils/pixPayloadGenerator';
 
 interface OrderTrackingModalProps {
   order: Order;
@@ -38,16 +37,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ order, t
   const currentStepIdx = getStepIndex(order.status);
   const isCancelled = order.status === 'cancelled';
 
-  const tenantPix = resolveTenantPixCredentials(tenant);
-  const mockPixPayload = generateDynamicPixPayload({
-    pixKey: tenantPix.pixKey,
-    pixKeyType: tenantPix.pixKeyType,
-    tenantPhone: tenant.phone,
-    beneficiaryName: tenantPix.beneficiaryName,
-    merchantCity: tenantPix.merchantCityEmv,
-    amountCents: order.totalCents,
-    txid: order.id || `PEDIDO${order.orderNumber}`,
-  });
+  const mockPixPayload = `00020126580014br.gov.bcb.pix0136${tenant.slug}@saas-cardapios.com520400005303986540${(order.totalCents / 100).toFixed(2)}5802BR5920${tenant.name.slice(0, 20)}6009SAO PAULO62070503***6304E8A9`;
 
   const handleCopyPix = () => {
     navigator.clipboard.writeText(mockPixPayload);

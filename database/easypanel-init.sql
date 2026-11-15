@@ -44,8 +44,6 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS subscription_status VARCHAR(30) NOT
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS status_notification_templates JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS pix_config JSONB NOT NULL DEFAULT '{}'::jsonb;
-ALTER TABLE tenants ADD COLUMN IF NOT EXISTS ifood_config JSONB NOT NULL DEFAULT '{}'::jsonb;
-ALTER TABLE tenants ADD COLUMN IF NOT EXISTS tables_count INTEGER NOT NULL DEFAULT 12;
 
 CREATE INDEX IF NOT EXISTS idx_tenants_slug ON tenants(slug);
 
@@ -111,10 +109,6 @@ CREATE TABLE IF NOT EXISTS orders (
   idempotency_key VARCHAR(120),
   pix_transaction JSONB,
   whatsapp_logs JSONB NOT NULL DEFAULT '[]'::jsonb,
-  channel VARCHAR(30) DEFAULT 'DIGITAL_MENU',
-  ifood_order_id VARCHAR(80),
-  ifood_display_id VARCHAR(40),
-  ifood_pickup_code VARCHAR(40),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -125,14 +119,9 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS estimated_minutes INTEGER DEFAULT 35
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS whatsapp_status VARCHAR(40) DEFAULT 'delivered';
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS pix_transaction JSONB;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS whatsapp_logs JSONB NOT NULL DEFAULT '[]'::jsonb;
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS channel VARCHAR(30) DEFAULT 'DIGITAL_MENU';
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS ifood_order_id VARCHAR(80);
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS ifood_display_id VARCHAR(40);
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS ifood_pickup_code VARCHAR(40);
 
 CREATE INDEX IF NOT EXISTS idx_orders_tenant_slug ON orders(tenant_slug);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_tenant_idempotency ON orders(tenant_slug, idempotency_key) WHERE idempotency_key IS NOT NULL;
 
 -- 5. TABELA TRANSAÇÕES PIX DIRETO RESTAURANTE
 CREATE TABLE IF NOT EXISTS pix_transactions (
@@ -145,25 +134,13 @@ CREATE TABLE IF NOT EXISTS pix_transactions (
   psp VARCHAR(60) DEFAULT 'direct_bank',
   customer_name VARCHAR(120),
   customer_phone VARCHAR(30),
-  pix_key VARCHAR(160),
-  beneficiary_name VARCHAR(150),
-  merchant_name VARCHAR(60),
-  merchant_city VARCHAR(60),
-  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
   end_to_end_id VARCHAR(100),
   paid_at TIMESTAMPTZ,
   expires_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-ALTER TABLE pix_transactions ADD COLUMN IF NOT EXISTS pix_key VARCHAR(160);
-ALTER TABLE pix_transactions ADD COLUMN IF NOT EXISTS beneficiary_name VARCHAR(150);
-ALTER TABLE pix_transactions ADD COLUMN IF NOT EXISTS merchant_name VARCHAR(60);
-ALTER TABLE pix_transactions ADD COLUMN IF NOT EXISTS merchant_city VARCHAR(60);
-ALTER TABLE pix_transactions ADD COLUMN IF NOT EXISTS payload JSONB NOT NULL DEFAULT '{}'::jsonb;
-
 CREATE INDEX IF NOT EXISTS idx_pix_tenant_slug ON pix_transactions(tenant_slug);
-CREATE INDEX IF NOT EXISTS idx_pix_order_id ON pix_transactions(order_id);
 
 -- 6. TABELA OUTBOX PATTERN (FILA TRANSACIONAL DE EVENTOS PARA N8N / EVOLUTION API)
 CREATE TABLE IF NOT EXISTS outbox_events (
@@ -174,14 +151,9 @@ CREATE TABLE IF NOT EXISTS outbox_events (
   event_type VARCHAR(80) NOT NULL,
   payload JSONB NOT NULL DEFAULT '{}'::jsonb,
   status VARCHAR(30) NOT NULL DEFAULT 'pending',
-  retry_count INTEGER NOT NULL DEFAULT 0,
-  last_error TEXT,
   processed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
-ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS last_error TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox_events(status);
 
@@ -216,14 +188,81 @@ CREATE TABLE IF NOT EXISTS asaas_subscriptions (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 9. HIGIENIZAÇÃO AUTOMÁTICA: REMOVE O PLACEHOLDER 'Meu Restaurante (aladay / 559131976334)'
--- (O número 559131976334 e a instância 'aladay' são exclusivos do suporte da plataforma SaaS)
-DELETE FROM products WHERE LOWER(tenant_slug) = 'aladay';
-DELETE FROM categories WHERE LOWER(tenant_slug) = 'aladay';
-DELETE FROM orders WHERE LOWER(tenant_slug) = 'aladay';
-DELETE FROM pix_transactions WHERE LOWER(tenant_slug) = 'aladay';
-DELETE FROM asaas_subscriptions WHERE LOWER(tenant_slug) = 'aladay';
-DELETE FROM subscriber_users WHERE LOWER(tenant_slug) = 'aladay' AND role != 'SUPER_ADMIN';
-DELETE FROM tenants WHERE LOWER(slug) = 'aladay' OR id = 'tenant_aladay_01' OR phone LIKE '%9131976334%';
+-- Eventos de webhook processados de forma idempotente (Pix/Asaas/outros provedores)
+CREATE TABLE IF NOT EXISTS webhook_events (
+  provider VARCHAR(40) NOT NULL,
+  event_id VARCHAR(180) NOT NULL,
+  event_type VARCHAR(100) NOT NULL,
+  payload_hash VARCHAR(64) NOT NULL,
+  processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (provider, event_id)
+);
+CREATE INDEX IF NOT EXISTS idx_webhook_events_processed_at ON webhook_events(processed_at);
 
+-- Incremental hardening migration. Duplicate historical keys must be reconciled before rollout.
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS tables_count INTEGER NOT NULL DEFAULT 12;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS request_hash VARCHAR(64);
+CREATE UNIQUE INDEX IF NOT EXISTS orders_tenant_idempotency_unique
+  ON orders (tenant_slug, idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS pix_order_unique ON pix_transactions (order_id);
+CREATE UNIQUE INDEX IF NOT EXISTS pix_end_to_end_unique ON pix_transactions (end_to_end_id) WHERE end_to_end_id IS NOT NULL;
 
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  id UUID PRIMARY KEY,
+  user_id VARCHAR(80) NOT NULL REFERENCES subscriber_users(id),
+  credential_hash TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS auth_sessions_expiry ON auth_sessions(expires_at);
+CREATE TABLE IF NOT EXISTS auth_otp (
+  email VARCHAR(160) PRIMARY KEY,
+  code_hash VARCHAR(64) NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS rate_limits (
+  key VARCHAR(200) PRIMARY KEY,
+  count INTEGER NOT NULL,
+  reset_at TIMESTAMPTZ NOT NULL
+);
+ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS available_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ;
+ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS lock_token UUID;
+ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS last_error VARCHAR(120);
+CREATE INDEX IF NOT EXISTS outbox_available ON outbox_events(status, available_at);
+
+CREATE TABLE IF NOT EXISTS billing_operations (
+  tenant_slug VARCHAR(100) PRIMARY KEY,
+  request_hash VARCHAR(64) NOT NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'processing',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- NOT VALID preserves historical rows while enforcing constraints on new writes.
+CREATE UNIQUE INDEX IF NOT EXISTS tenants_identity_scope ON tenants(id,slug);
+CREATE UNIQUE INDEX IF NOT EXISTS categories_identity_scope ON categories(id,tenant_slug);
+CREATE UNIQUE INDEX IF NOT EXISTS orders_identity_scope ON orders(id,tenant_slug);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='categories_tenant_scope' AND conrelid='categories'::regclass) THEN
+    ALTER TABLE categories ADD CONSTRAINT categories_tenant_scope FOREIGN KEY(tenant_id,tenant_slug) REFERENCES tenants(id,slug) NOT VALID;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='products_tenant_scope' AND conrelid='products'::regclass) THEN
+    ALTER TABLE products ADD CONSTRAINT products_tenant_scope FOREIGN KEY(tenant_id,tenant_slug) REFERENCES tenants(id,slug) NOT VALID;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='products_category_scope' AND conrelid='products'::regclass) THEN
+    ALTER TABLE products ADD CONSTRAINT products_category_scope FOREIGN KEY(category_id,tenant_slug) REFERENCES categories(id,tenant_slug) NOT VALID;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='orders_tenant_scope' AND conrelid='orders'::regclass) THEN
+    ALTER TABLE orders ADD CONSTRAINT orders_tenant_scope FOREIGN KEY(tenant_id,tenant_slug) REFERENCES tenants(id,slug) NOT VALID;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='pix_order_scope' AND conrelid='pix_transactions'::regclass) THEN
+    ALTER TABLE pix_transactions ADD CONSTRAINT pix_order_scope FOREIGN KEY(order_id,tenant_slug) REFERENCES orders(id,tenant_slug) NOT VALID;
+  END IF;
+END $$;
+
+-- Paid access expires even when a provider's overdue webhook is delayed.
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS subscription_access_until TIMESTAMPTZ;

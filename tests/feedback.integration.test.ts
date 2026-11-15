@@ -1,0 +1,61 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import crypto from 'node:crypto';
+import express from 'express';
+import pg from 'pg';
+import {mountFeedback} from '../backend/feedback';
+import {installAsyncErrors} from '../backend/http';
+
+test('feedback invitation, single-use submission, consent, moderation, tenant scope and retention',async()=>{
+  const connectionString=process.env.TEST_DATABASE_URL;assert.ok(connectionString&&new URL(connectionString).pathname.endsWith('_test'),'Banco descartável _test obrigatório.');
+  const pool=new pg.Pool({connectionString});const suffix=crypto.randomBytes(6).toString('hex'),slug=`feed-${suffix}`,other=`feed-other-${suffix}`;
+  const app=express();installAsyncErrors(app);app.use(express.json());
+  mountFeedback(app,pool,(req,res,next)=>{if(req.headers['x-test-tenant']!==req.params.slug)return void res.status(403).json({error:'scope'});(req as any).user={sub:'feedback-test-owner',role:req.headers['x-test-role']||'TENANT_OWNER'};next();});
+  app.use((error:any,_req:any,res:any,_next:any)=>res.status(error.status||500).json({error:error.message}));
+  const server=app.listen(0,'127.0.0.1');await new Promise<void>(resolve=>server.once('listening',resolve));const address=server.address();assert.ok(address&&typeof address!=='string');const host=`http://127.0.0.1:${address.port}`;
+  async function req(path:string,body?:unknown,method='POST',tenant=slug,role='TENANT_OWNER'){const response=await fetch(host+path,{method,headers:{'Content-Type':'application/json','x-test-tenant':tenant,'x-test-role':role},body:body===undefined?undefined:JSON.stringify(body)});return {status:response.status,body:await response.json()};}
+  const base=`/api/v1/tenants/${slug}`;
+  const invite=(id:string,body={})=>req(`${base}/orders/${id}/feedback-invite`,body);
+  const orders=Array.from({length:5},()=>`ord_${crypto.randomUUID()}`);
+  try {
+    await pool.query(fs.readFileSync('database/easypanel-init.sql','utf8'));await pool.query(fs.readFileSync('database/intelligence.sql','utf8'));await pool.query(fs.readFileSync('database/feedback.sql','utf8'));
+    for(const tenant of [slug,other]) await pool.query('INSERT INTO tenants(id,name,slug,phone) VALUES($1,$1,$1,$2)',[tenant,'5511999999999']);
+    for(let index=0;index<orders.length;index++) await pool.query("INSERT INTO orders(id,order_number,tenant_id,tenant_slug,customer_name,customer_phone,total_cents,status,payment_method,payment_status) VALUES($1,$2,$3,$3,'Cliente sigiloso','5511999999999',1000,$4,$5,'pending')",[orders[index],index+1,slug,index===4?'ready':'delivered',index===3?'Pix':'Dinheiro']);
+    assert.equal((await invite(orders[0])).status,403);
+    await pool.query("INSERT INTO intelligence_features(tenant_slug,feature,released,enabled) VALUES($1,'feedback',true,true)",[slug]);
+    assert.equal((await req(`${base}/feedback`,undefined,'GET',slug,'KITCHEN_STAFF')).status,403);
+    assert.equal((await invite(orders[4])).status,409);
+    assert.equal((await invite(orders[3])).status,409,'static Pix is not settlement');
+    const first=await invite(orders[0]);assert.equal(first.status,201);
+    const firstToken=new URL(first.body.url,'http://localhost').searchParams.get('feedback');assert.ok(firstToken);assert.match(firstToken,/^[a-f0-9]{64}$/);
+    const stored=(await pool.query('SELECT token_hash FROM feedback_requests WHERE tenant_slug=$1 AND order_id=$2',[slug,orders[0]])).rows[0].token_hash;assert.notEqual(stored,firstToken);
+    assert.equal((await invite(orders[0])).status,409);
+    const reissued=await invite(orders[0],{reissue:true,confirmReissue:true});assert.equal(reissued.status,200);const token=new URL(reissued.body.url,'http://localhost').searchParams.get('feedback');
+    assert.equal((await req('/api/v1/public/feedback',{token:firstToken,rating:5,publicConsent:true})).status,410);
+    const submissions=await Promise.all([req('/api/v1/public/feedback',{token,rating:2,comment:'Precisa melhorar',publicConsent:false}),req('/api/v1/public/feedback',{token,rating:2,comment:'Precisa melhorar',publicConsent:false})]);
+    assert.deepEqual(submissions.map(row=>row.status).sort(),[201,410]);
+    const listing=await req(`${base}/feedback`,undefined,'GET');assert.equal(listing.body.metrics.count,1);const feedback=listing.body.data[0];assert.equal(feedback.publicConsent,false);
+    assert.equal((await req(`${base}/feedback/${feedback.id}/moderation`,{status:'approved',expectedVersion:1},'PATCH')).status,409);
+    assert.equal((await req(`${base}/feedback/public`,undefined,'GET')).body.data.length,0);
+    const invitation2=await invite(orders[1]),token2=new URL(invitation2.body.url,'http://localhost').searchParams.get('feedback');
+    assert.equal((await req('/api/v1/public/feedback',{token:token2,rating:5,comment:'Gostei',publicConsent:true})).status,201);
+    const second=(await req(`${base}/feedback?moderation=pending`,undefined,'GET')).body.data.find((row:any)=>row.rating===5);
+    assert.equal((await req(`/api/v1/tenants/${other}/feedback/${second.id}/moderation`,{status:'approved',expectedVersion:1},'PATCH',slug)).status,403);
+    assert.equal((await req(`${base}/feedback/${second.id}/moderation`,{status:'approved',expectedVersion:1},'PATCH')).status,200);
+    assert.equal((await req(`${base}/feedback/${second.id}/moderation`,{status:'rejected',expectedVersion:1},'PATCH')).status,409);
+    const publicRows=(await req(`${base}/feedback/public`,undefined,'GET')).body.data;assert.equal(publicRows.length,1);assert.deepEqual(Object.keys(publicRows[0]).sort(),['comment','createdAt','rating']);
+    assert.equal((await pool.query('SELECT status FROM orders WHERE id=$1',[orders[1]])).rows[0].status,'delivered');
+    assert.equal((await req(`${base}/feedback/${second.id}`,{confirm:false},'DELETE')).status,400);
+    assert.equal((await req(`${base}/feedback/${second.id}`,{confirm:true},'DELETE')).status,200);
+    assert.equal((await pool.query('SELECT 1 FROM feedback_moderation_events WHERE feedback_id=$1',[second.id])).rowCount,0);
+    const expiredInvite=await invite(orders[2]),expiredToken=new URL(expiredInvite.body.url,'http://localhost').searchParams.get('feedback');
+    await pool.query("UPDATE feedback_requests SET expires_at=NOW()-INTERVAL '1 minute' WHERE tenant_slug=$1 AND order_id=$2",[slug,orders[2]]);
+    assert.equal((await req('/api/v1/public/feedback',{token:expiredToken,rating:5})).status,410);
+    await pool.query("UPDATE customer_feedback SET expires_at=NOW()-INTERVAL '1 minute' WHERE tenant_slug=$1",[slug]);
+    assert.equal((await req(`${base}/feedback`,undefined,'GET')).body.metrics.count,0);
+    assert.equal((await pool.query('SELECT COUNT(*)::int AS count FROM customer_feedback WHERE tenant_slug=$1',[slug])).rows[0].count,0);
+    await pool.query("UPDATE intelligence_features SET enabled=false WHERE tenant_slug=$1 AND feature='feedback'",[slug]);
+    assert.equal((await req(`${base}/feedback/public`,undefined,'GET')).status,403);
+  } finally {server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));await pool.query('DELETE FROM orders WHERE tenant_slug=ANY($1::text[])',[[slug,other]]);await pool.query('DELETE FROM tenants WHERE slug=ANY($1::text[])',[[slug,other]]);await pool.end();}
+});

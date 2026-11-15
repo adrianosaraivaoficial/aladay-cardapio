@@ -1,0 +1,9 @@
+import { useState } from 'react';
+
+export function PublicReviewsView({ tenantSlug, enabled }: { tenantSlug: string; enabled: boolean }) {
+  const [reviews, setReviews] = useState<Array<{ rating: number; comment: string; createdAt: string }> | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  if (!enabled) return null;
+  return <section className="mx-4 my-3 rounded-xl border border-slate-200 bg-white p-3 space-y-3" aria-label="Avaliações de clientes"><div className="flex items-center justify-between gap-3"><h2 className="text-xs font-bold">Avaliações de clientes</h2><button type="button" className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold disabled:opacity-50" disabled={busy} onClick={async () => { setBusy(true); setError(''); try { const response = await fetch(`/api/v1/tenants/${encodeURIComponent(tenantSlug)}/feedback/public`); const data = await response.json(); if (!response.ok) throw new Error('Avaliações indisponíveis neste momento.'); setReviews(data.data); } catch (e) { setError(e instanceof Error ? e.message : 'Não foi possível consultar avaliações.'); } finally { setBusy(false); } }}>{busy ? 'Carregando…' : 'Ver avaliações'}</button></div>{error && <p role="alert" className="text-xs text-rose-700">{error}</p>}{reviews && !reviews.length && <p role="status" className="text-xs text-slate-500">Nenhuma avaliação pública disponível.</p>}{reviews && reviews.length > 0 && <div className="max-h-64 space-y-3 overflow-y-auto">{reviews.map((review, index) => <article className="border-t border-slate-100 pt-2" key={index}><p className="text-xs font-semibold">{review.rating} / 5 estrelas · {new Date(review.createdAt).toLocaleDateString('pt-BR')}</p><p className="mt-1 whitespace-pre-wrap break-words text-xs text-slate-600">{review.comment || 'Avaliação sem comentário.'}</p></article>)}</div>}</section>;
+}

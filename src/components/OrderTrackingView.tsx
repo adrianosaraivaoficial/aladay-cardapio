@@ -7,20 +7,10 @@ import {
   PackageCheck,
   AlertCircle,
   MessageSquare,
-  Printer,
-  ChevronRight,
-  Phone,
   MapPin,
-  RefreshCw,
-  ExternalLink,
-  ShieldCheck,
-  Send,
-  Sparkles,
-  Share2,
   Copy,
   Check,
-  Zap,
-  QrCode
+  Zap
 } from 'lucide-react';
 import { Order, OrderStatus, RestaurantTenant } from '../types';
 import { ThermalTicketModal } from './ThermalTicketModal';
@@ -39,7 +29,7 @@ const DEFAULT_TRACKING_ORDER: Order = {
   tenantSlug: 'aladay',
   orderNumber: 1042,
   customerName: 'Cliente',
-  customerPhone: '559181214188',
+  customerPhone: '',
   type: 'delivery',
   status: 'received',
   deliveryAddress: 'Endereço cadastrado',
@@ -62,11 +52,9 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
   onBackToMenu,
 }) => {
   const [order, setOrder] = useState<Order>(() => initialOrder || DEFAULT_TRACKING_ORDER);
-  const [isUpdating, setIsUpdating] = useState(false);
   const [showThermalModal, setShowThermalModal] = useState(false);
   const [showPixModal, setShowPixModal] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Sync if prop updates
   useEffect(() => {
@@ -81,13 +69,13 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
     let isMounted = true;
     const pollOrder = async () => {
       try {
-        const res = await fetch(`/api/v1/orders/${encodeURIComponent(order.id)}`);
+        const res = await fetch(`/api/v1/orders/${encodeURIComponent(order.id)}/tracking`);
         if (res.ok) {
           const json = await res.json();
-          if (isMounted && json?.data) {
+          if (isMounted && json?.data?.order) {
             setOrder((prev) => ({
               ...prev,
-              ...json.data,
+              ...json.data.order,
             }));
           }
         }
@@ -209,51 +197,6 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
     },
   ];
 
-  // Advance status handler (Simulation & Real API)
-  const handleAdvanceStatus = async (nextStatus: OrderStatus) => {
-    setIsUpdating(true);
-    try {
-      const res = await fetch(`/api/v1/orders/${order.id}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: nextStatus }),
-      });
-
-      if (res.ok) {
-        const json = await res.json();
-        setOrder(json.data);
-        if (onUpdateOrderStatus) {
-          onUpdateOrderStatus(order.id, nextStatus);
-        }
-        setToastMessage(
-          `Notificação WhatsApp do status "${nextStatus}" despachada via Evolution API para ${order.customerPhone}!`
-        );
-      } else {
-        // Fallback local update
-        setOrder((prev) => ({
-          ...prev,
-          status: nextStatus,
-          updatedAt: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-        }));
-        if (onUpdateOrderStatus) {
-          onUpdateOrderStatus(order.id, nextStatus);
-        }
-      }
-    } catch {
-      setOrder((prev) => ({
-        ...prev,
-        status: nextStatus,
-        updatedAt: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-      }));
-      if (onUpdateOrderStatus) {
-        onUpdateOrderStatus(order.id, nextStatus);
-      }
-    } finally {
-      setIsUpdating(false);
-      setTimeout(() => setToastMessage(null), 4500);
-    }
-  };
-
   const handleCopyTrackingLink = () => {
     const url = window.location.origin + `/pedido/${order.id}`;
     navigator.clipboard.writeText(url);
@@ -269,14 +212,6 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
   return (
     <div className="min-h-screen bg-neutral-100 py-6 px-4 sm:px-6">
       <div className="max-w-3xl mx-auto space-y-5">
-        {/* Toast Alert */}
-        {toastMessage && (
-          <div className="fixed top-4 right-4 z-50 bg-neutral-900 text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-3 border border-neutral-700 animate-in fade-in slide-in-from-top-2 text-xs">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-            <span className="font-medium">{toastMessage}</span>
-          </div>
-        )}
-
         {/* Top Bar with Brand & Return */}
         <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-neutral-200 shadow-2xs">
           <div className="flex items-center gap-3">

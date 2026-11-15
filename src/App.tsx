@@ -1,19 +1,10 @@
-import React, { useState } from 'react';
-import { FinancialCalculator } from './components/FinancialCalculator';
-import { ConsumerMenuView } from './components/ConsumerMenuView';
-import { RestaurantAdminView } from './components/RestaurantAdminView';
-import { TechDiagramsView } from './components/TechDiagramsView';
-import { ProjectKickoffView } from './components/ProjectKickoffView';
-import { OrderTrackingView } from './components/OrderTrackingView';
+import React, { lazy, Suspense, useState } from 'react';
 import {
   INITIAL_CATEGORIES,
-  INITIAL_CUSTOMERS,
   INITIAL_ORDERS,
   INITIAL_PRODUCTS,
   INITIAL_TENANT,
   INITIAL_TENANTS_LIST,
-  PIZZARIA_CATEGORIES,
-  PIZZARIA_PRODUCTS,
 } from './data/mockTenant';
 import {
   AuthSession,
@@ -26,12 +17,44 @@ import {
   Product,
   RestaurantTenant,
 } from './types';
-import { BLUEPRINT_SECTIONS } from './data/blueprintSections';
 import { LogIn, Lock, ShieldAlert, X, ArrowRight, Menu, Share2, Copy, Check, MessageSquare, ExternalLink } from 'lucide-react';
-import { WhatsAppAutomationView } from './components/WhatsAppAutomationView';
-import { AuthPortalView } from './components/AuthPortalView';
-import { LandingPageView } from './components/LandingPageView';
-import { LegalComplianceView } from './components/LegalComplianceView';
+import { ViewLoadingFallback } from './components/ViewLoadingFallback';
+import { buildPublicMenuUrl } from './utils/publicMenuUrl';
+import { syncSeoMetadata } from './utils/seoMetadata';
+
+const FinancialCalculator = lazy(() =>
+  import('./components/FinancialCalculator').then((module) => ({ default: module.FinancialCalculator }))
+);
+const ConsumerMenuView = lazy(() =>
+  import('./components/ConsumerMenuView').then((module) => ({ default: module.ConsumerMenuView }))
+);
+const RestaurantAdminView = lazy(() =>
+  import('./components/RestaurantAdminView').then((module) => ({ default: module.RestaurantAdminView }))
+);
+const TechDiagramsView = lazy(() =>
+  import('./components/TechDiagramsView').then((module) => ({ default: module.TechDiagramsView }))
+);
+const ProjectKickoffView = lazy(() =>
+  import('./components/ProjectKickoffView').then((module) => ({ default: module.ProjectKickoffView }))
+);
+const OrderTrackingView = lazy(() =>
+  import('./components/OrderTrackingView').then((module) => ({ default: module.OrderTrackingView }))
+);
+const WhatsAppAutomationView = lazy(() =>
+  import('./components/WhatsAppAutomationView').then((module) => ({ default: module.WhatsAppAutomationView }))
+);
+const AuthPortalView = lazy(() =>
+  import('./components/AuthPortalView').then((module) => ({ default: module.AuthPortalView }))
+);
+const LandingPageView = lazy(() =>
+  import('./components/LandingPageView').then((module) => ({ default: module.LandingPageView }))
+);
+const LegalComplianceView = lazy(() =>
+  import('./components/LegalComplianceView').then((module) => ({ default: module.LegalComplianceView }))
+);
+const PublicFeedbackView = lazy(() =>
+  import('./components/PublicFeedbackView').then((module) => ({ default: module.PublicFeedbackView }))
+);
 
 const CATALOG_PARTITION_PREFIX = 'aladay_prod_catalog_v3_';
 const CATALOG_INDEX_KEY = 'aladay_prod_catalog_index_v3';
@@ -400,13 +423,20 @@ function resolvePublicStoreSlugFromLocation(): string | null {
 }
 
 export default function App() {
+  const [feedbackToken] = useState<string | null>(() => new URLSearchParams(window.location.search).get('feedback'));
+  React.useEffect(() => {
+    if (feedbackToken === null) return;
+    const url = new URL(window.location.href); url.searchParams.delete('feedback');
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  }, [feedbackToken]);
   const [sharedLojaParam, setSharedLojaParam] = useState<string | null>(() =>
     resolvePublicStoreSlugFromLocation()
   );
 
-  const [currentView, setCurrentView] = useState<'home' | 'kickoff' | 'consumer' | 'admin' | 'calculator' | 'diagrams' | 'tracking' | 'whatsapp' | 'auth' | 'terms' | 'privacy'>(() =>
-    resolvePublicStoreSlugFromLocation() ? 'consumer' : 'home'
+  const [currentView, setCurrentView] = useState<'home' | 'kickoff' | 'consumer' | 'admin' | 'calculator' | 'diagrams' | 'tracking' | 'whatsapp' | 'auth' | 'terms' | 'privacy' | 'feedback'>(() =>
+    feedbackToken !== null ? 'feedback' : resolvePublicStoreSlugFromLocation() ? 'consumer' : 'home'
   );
+  const [publicCatalogState, setPublicCatalogState] = useState<{slug:string;status:'loading'|'ready'|'error'}>({slug:'',status:'loading'});
   const [selectedTrackingOrder, setSelectedTrackingOrder] = useState<Order | null>(null);
   const [showSubscriptionNoticeModal, setShowSubscriptionNoticeModal] = useState<boolean>(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
@@ -501,11 +531,14 @@ export default function App() {
     }
   });
 
+  React.useEffect(() => {
+    if (currentView !== 'feedback') syncSeoMetadata({ view: currentView, tenant });
+  }, [currentView, tenant]);
+
   // Tracks which tenant slugs have pending catalog mutations for incremental persistence
   const dirtyTenantSlugsRef = React.useRef<Set<string>>(new Set());
   // Tracks which tenant slugs have been hydrated from the server in this session so stale localStorage never overwrites DB
   const hydratedSlugsFromServerRef = React.useRef<Set<string>>(new Set());
-  const allowEmptyOverwriteRef = React.useRef<boolean>(false);
 
   const markTenantCatalogDirty = React.useCallback((slug: string) => {
     if (slug && slug.toLowerCase() !== 'aladay') {
@@ -576,14 +609,24 @@ export default function App() {
     return hydrated;
   });
 
-  const [customers, setCustomers] = useState<CustomerRecord[]>(() => {
-    try {
-      const saved = localStorage.getItem('aladay_prod_customers_v2');
-      return saved ? JSON.parse(saved) : INITIAL_CUSTOMERS;
-    } catch {
-      return INITIAL_CUSTOMERS;
-    }
-  });
+  const [customers, setCustomers] = useState<CustomerRecord[]>([]);
+  const [catalogSaveState, setCatalogSaveState] = useState('');
+  const [catalogSaving, setCatalogSaving] = useState(false);
+  const [catalogReloadVersion, setCatalogReloadVersion] = useState(0);
+  React.useEffect(() => {
+    const reload = () => setCatalogReloadVersion(value => value + 1);
+    window.addEventListener('aladay-catalog-published', reload);
+    return () => window.removeEventListener('aladay-catalog-published', reload);
+  }, []);
+  React.useEffect(() => {
+    setCustomers([]);
+    if (!authSession?.token || !tenant.slug || authSession.user.role === 'KITCHEN_STAFF') return;
+    let cancelled = false;
+    fetch(`/api/v1/tenants/${encodeURIComponent(tenant.slug)}/customers`, { headers: { Authorization: `Bearer ${authSession.token}` } })
+      .then(async response => { if (!response.ok) throw new Error(); return response.json(); })
+      .then(payload => { if (!cancelled) setCustomers(payload.data || []); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [tenant.slug, authSession?.token]);
 
   // Domain-isolated persistence effects to prevent unrelated state changes from serializing the catalog
   React.useEffect(() => {
@@ -602,13 +645,7 @@ export default function App() {
     }
   }, [tenantsList]);
 
-  React.useEffect(() => {
-    try {
-      localStorage.setItem('aladay_prod_customers_v2', JSON.stringify(customers));
-    } catch {
-      // ignore storage quota errors
-    }
-  }, [customers]);
+  // Preserve the legacy CRM cache until the owner reviews its migration.
 
   // Debounced, incremental per-tenant catalog persistence
   React.useEffect(() => {
@@ -693,10 +730,12 @@ export default function App() {
 
   // Sincroniza o status real da assinatura do tenant junto à API do Asaas no backend
   React.useEffect(() => {
-    if (!tenant?.slug) return;
+    if (!tenant?.slug || !authSession?.token) return;
     let isMounted = true;
 
-    fetch(`/api/v1/asaas/subscription/${encodeURIComponent(tenant.slug)}`)
+    fetch(`/api/v1/asaas/subscription/${encodeURIComponent(tenant.slug)}`, {
+      headers: { Authorization: `Bearer ${authSession.token}` },
+    })
       .then((res) => (res && res.ok ? res.json() : null))
       .then((data) => {
         if (!isMounted || !data?.subscription) return;
@@ -736,7 +775,7 @@ export default function App() {
     return () => {
       isMounted = false;
     };
-  }, [tenant?.slug]);
+  }, [tenant?.slug, authSession?.token]);
 
   const verifyTenantTrialAndAsaasSubscription = React.useCallback(
     (targetTenant: RestaurantTenant | null | undefined, nowMs: number) => {
@@ -910,7 +949,7 @@ export default function App() {
     currentView === 'calculator' ||
     currentView === 'diagrams';
 
-  // O acesso público ao cardápio (?loja=slug ou aba consumer/tracking) é liberado para os clientes do restaurante
+  // O acesso público ao cardápio (/cardapio/slug, query legada ou aba consumer/tracking) é liberado para os clientes do restaurante
   const isAllowedPublicStoreView = Boolean(
     (Boolean(sharedLojaParam) || currentView === 'consumer' || currentView === 'tracking') &&
       tenant.subscriptionStatus !== 'suspended' &&
@@ -937,8 +976,11 @@ export default function App() {
 
   // Sincroniza a lista oficial de restaurantes do PostgreSQL (garante que Computador e Celular mostrem exatamente os mesmos restaurantes)
   React.useEffect(() => {
+    if (authSession?.user.role !== 'SUPER_ADMIN') return;
     let cancelled = false;
-    fetch('/api/v1/tenants')
+    const headers: Record<string, string> = {};
+    if (authSession?.token) headers.Authorization = `Bearer ${authSession.token}`;
+    fetch('/api/v1/tenants', { headers })
       .then((res) => (res.ok ? res.json() : null))
       .then((payload) => {
         if (cancelled || !Array.isArray(payload?.data)) return;
@@ -981,8 +1023,11 @@ export default function App() {
     if (!slugToLoad || slugToLoad.toLowerCase() === 'aladay') return;
 
     let cancelled = false;
-    fetch(`/api/v1/tenants/${encodeURIComponent(slugToLoad)}/catalog`)
-      .then((res) => (res.ok ? res.json() : null))
+    if(sharedLojaParam) setPublicCatalogState(prev=>prev.slug===slugToLoad && prev.status==='ready'?prev:{slug:slugToLoad,status:'loading'});
+    const headers: Record<string, string> = {};
+    if (authSession?.token) headers.Authorization = `Bearer ${authSession.token}`;
+    fetch(`/api/v1/tenants/${encodeURIComponent(slugToLoad)}/catalog`, { headers })
+      .then((res) => { if(!res.ok) throw new Error('catalog_unavailable'); return res.json(); })
       .then((payload) => {
         if (cancelled || !payload?.data?.tenant) return;
         const serverTenant = payload.data.tenant as RestaurantTenant;
@@ -1024,11 +1069,11 @@ export default function App() {
           return [...filtered, normalizedSrvTenant];
         });
 
-        if (serverCategories.length > 0 || serverProducts.length > 0) {
+        {
           setCatalogsByTenant((prev) => {
             const existing = prev[serverTenant.slug];
             const sanitizedFromServer = sanitizeTenantCatalog({
-              categories: serverCategories.length > 0 ? serverCategories : INITIAL_CATEGORIES,
+              categories: serverCategories,
               products: serverProducts,
               orders: existing
                 ? existing.orderIds.map((id) => existing.ordersById[id]).filter(Boolean)
@@ -1044,15 +1089,16 @@ export default function App() {
         }
 
         hydratedSlugsFromServerRef.current.add(serverTenant.slug);
+        setPublicCatalogState({slug:serverTenant.slug,status:'ready'});
       })
       .catch(() => {
-        hydratedSlugsFromServerRef.current.add(slugToLoad);
+        if(!cancelled) setPublicCatalogState({slug:slugToLoad,status:'error'});
       });
 
     return () => {
       cancelled = true;
     };
-  }, [sharedLojaParam, currentView, tenant.slug, authSession?.token]);
+  }, [sharedLojaParam, currentView, tenant.slug, authSession?.token, catalogReloadVersion]);
 
   React.useEffect(() => {
     if (isSuperAdmin) return;
@@ -1140,27 +1186,27 @@ export default function App() {
     [currentCatalog.orderIds, currentCatalog.ordersById]
   );
 
-  // Sincroniza automaticamente o restaurante e seu cardápio com o backend apenas quando o lojista/admin está autenticado e após hidratar do servidor
-  React.useEffect(() => {
-    if (!tenant?.slug || tenant.slug.toLowerCase() === 'aladay') return;
-    if (!authSession && Boolean(sharedLojaParam)) return;
-    if (!hydratedSlugsFromServerRef.current.has(tenant.slug)) return;
-    const timeoutId = setTimeout(() => {
-      const allowEmpty = allowEmptyOverwriteRef.current;
-      allowEmptyOverwriteRef.current = false;
-      fetch(`/api/v1/tenants/${encodeURIComponent(tenant.slug)}/catalog/sync`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tenant,
-          categories,
-          products,
-          allowEmptyOverwrite: allowEmpty,
-        }),
-      }).catch(() => {});
-    }, 350);
-    return () => clearTimeout(timeoutId);
-  }, [tenant, categories, products, authSession, sharedLojaParam]);
+  // Catalog changes remain drafts until explicitly saved by the owner.
+  const saveCatalog = async () => {
+    if (!authSession?.token || catalogSaving) return;
+    setCatalogSaving(true); setCatalogSaveState('Salvando…');
+    try {
+      const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${authSession.token}` };
+      const previewResponse = await fetch(`/api/v1/tenants/${encodeURIComponent(tenant.slug)}/catalog/preview`, { method: 'POST', headers, body: JSON.stringify({ categories, products }) });
+      const preview = await previewResponse.json();
+      if (!previewResponse.ok) throw new Error(preview.error || 'Não foi possível calcular as diferenças.');
+      const removed = [...preview.removedProducts, ...preview.removedCategories].map((item: { name: string }) => item.name);
+      if (!window.confirm(`Publicar ${categories.length} categorias e ${products.length} produtos?\nAdicionar: ${preview.addedProducts.length} produtos.\nRemover: ${removed.length ? removed.join(', ') : 'nenhum item'}.\nOs produtos e categorias com os mesmos IDs serão atualizados.`)) { setCatalogSaveState('Publicação cancelada. Rascunho preservado.'); return; }
+      const response = await fetch(`/api/v1/tenants/${encodeURIComponent(tenant.slug)}/catalog/sync`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ tenant, categories, products, confirmed: true, catalogHash: preview.catalogHash, allowEmptyOverwrite: true }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Não foi possível salvar.');
+      setCatalogSaveState('Catálogo publicado com sucesso.');
+    } catch (error) { setCatalogSaveState(error instanceof Error ? error.message : 'Falha ao salvar.'); }
+    finally { setCatalogSaving(false); }
+  };
 
   // Sincroniza pedidos em tempo real do servidor para o Painel & KDS do restaurante (para que novos pedidos feitos no celular dos clientes apareçam imediatamente no KDS)
   React.useEffect(() => {
@@ -1354,6 +1400,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    if (authSession?.token) void fetch('/api/v1/auth/logout', { method: 'POST', headers: { Authorization: `Bearer ${authSession.token}` } }).catch(() => {});
     setAuthSession(null);
     try {
       localStorage.removeItem('aladay_auth_session');
@@ -1439,7 +1486,7 @@ export default function App() {
   };
 
   const handleDeleteProduct = (productId: string) => {
-    allowEmptyOverwriteRef.current = true;
+    if (!window.confirm('Excluir este produto do rascunho? A exclusão será publicada ao salvar o catálogo.')) return;
     hydratedSlugsFromServerRef.current.add(tenant.slug);
     markTenantCatalogDirty(tenant.slug);
     setCatalogsByTenant((prev) => {
@@ -1569,20 +1616,7 @@ export default function App() {
       };
     });
 
-    // Sync imported catalog with backend server for Zero-Trust Checkout price validation
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (authSession?.token) {
-      headers['Authorization'] = `Bearer ${authSession.token}`;
-    }
-    fetch(`/api/v1/tenants/${tenant.slug}/catalog/import`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        mode,
-        categories: newCategories,
-        products: newProducts,
-      }),
-    }).catch(() => {});
+    setCatalogSaveState('Rascunho atualizado. Revise e use Salvar catálogo para publicar.');
   };
 
   // When consumer creates order in the menu (O(1) order insertion)
@@ -1629,7 +1663,7 @@ export default function App() {
           totalSpentCents: newOrder.totalCents,
           firstOrderAt: new Date().toISOString().split('T')[0],
           lastOrderAt: 'Hoje às ' + newOrder.createdAt,
-          marketingConsent: true,
+          marketingConsent: false,
         },
         ...customers,
       ]);
@@ -1637,17 +1671,22 @@ export default function App() {
   };
 
   // Update order status in KDS in O(1) time and trigger WhatsApp Evolution API Notification
-  const handleUpdateOrderStatus = (orderId: string, nextStatus: OrderStatus) => {
+  const handleUpdateOrderStatus = async (orderId: string, nextStatus: OrderStatus) => {
     // Sync with backend API to record outbox event and fire Evolution API notification
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (authSession?.token) {
       headers['Authorization'] = `Bearer ${authSession.token}`;
     }
-    fetch(`/api/v1/orders/${orderId}/status`, {
-      method: 'PATCH',
-      headers,
-      body: JSON.stringify({ status: nextStatus }),
-    }).catch(() => {});
+    try {
+      const response = await fetch(`/api/v1/orders/${orderId}/status`, {
+        method: 'PATCH', headers, body: JSON.stringify({ status: nextStatus }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Não foi possível atualizar o pedido.');
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Falha ao atualizar pedido.');
+      return false;
+    }
 
     markTenantCatalogDirty(tenant.slug);
     setCatalogsByTenant((prev) => {
@@ -1662,7 +1701,7 @@ export default function App() {
       const newLog = {
         timestamp,
         event: `order.status_${nextStatus}`,
-        detail: `Status atualizado para "${nextStatus}" no painel KDS. Notificação despachada via Evolution API (${tenant.evolutionInstanceId || 'aladay'}).`,
+        detail: `Status atualizado para "${nextStatus}". Notificação enfileirada para entrega.`,
         statusSent: nextStatus,
       };
       const updatedOrder: Order = {
@@ -1688,6 +1727,7 @@ export default function App() {
         },
       };
     });
+    return true;
   };
 
   // Simulate Evolution API reconnect
@@ -1698,26 +1738,11 @@ export default function App() {
     }, 1200);
   };
 
-  // Download entire blueprint as markdown
-  const handleDownloadFullDoc = () => {
-    const fullMarkdown = BLUEPRINT_SECTIONS.map(
-      (s) => `## ${s.number}. ${s.title}\n\n_${s.subtitle}_\n\n${s.contentMarkdown}\n\n---\n`
-    ).join('\n');
-
-    const blob = new Blob([fullMarkdown], { type: 'text/markdown;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'Aladay_Cardapios_Digitais_Asaas_Cloudflare.md');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
+  if (feedbackToken !== null) return <Suspense fallback={<ViewLoadingFallback />}><PublicFeedbackView token={feedbackToken} /></Suspense>;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
-      {/* Universal Top Bar Contract (Ocultado quando o cliente acessa diretamente o link do restaurante ?loja=slug sem estar logado no painel administrativo) */}
+      {/* Universal Top Bar Contract (Ocultado quando o cliente acessa diretamente o link público sem estar logado no painel administrativo) */}
       {!(Boolean(sharedLojaParam) && !authSession && (currentView === 'consumer' || currentView === 'tracking')) && (
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-2xs">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-8">
@@ -1812,22 +1837,13 @@ export default function App() {
                   Início
                 </button>
                 <a
-                  href="#recursos"
+                  href="#demonstracao-celular"
                   onClick={() => {
                     if (currentView !== 'home') handleNavigateSafely('home');
                   }}
                   className="hover:text-blue-600 transition-colors whitespace-nowrap shrink-0"
                 >
-                  Recursos
-                </a>
-                <a
-                  href="#demonstracao"
-                  onClick={() => {
-                    if (currentView !== 'home') handleNavigateSafely('home');
-                  }}
-                  className="hover:text-blue-600 transition-colors whitespace-nowrap shrink-0"
-                >
-                  Como Funciona
+                  Demonstração no Celular
                 </a>
                 <a
                   href="#planos"
@@ -1836,7 +1852,7 @@ export default function App() {
                   }}
                   className="hover:text-blue-600 transition-colors whitespace-nowrap shrink-0"
                 >
-                  Planos (R$ 99/mês)
+                  Planos (a partir de R$ 99,00/mês)
                 </a>
                 <a
                   href="#calculadora"
@@ -1845,16 +1861,7 @@ export default function App() {
                   }}
                   className="hover:text-blue-600 transition-colors whitespace-nowrap shrink-0"
                 >
-                  Calculadora
-                </a>
-                <a
-                  href="#faq"
-                  onClick={() => {
-                    if (currentView !== 'home') handleNavigateSafely('home');
-                  }}
-                  className="hover:text-blue-600 transition-colors whitespace-nowrap shrink-0"
-                >
-                  Dúvidas
+                  Calculadora de Economia
                 </a>
               </>
             )}
@@ -2052,24 +2059,14 @@ export default function App() {
                 Início
               </button>
               <a
-                href="#recursos"
+                href="#demonstracao-celular"
                 onClick={() => {
                   if (currentView !== 'home') handleNavigateSafely('home');
                   setIsMobileMenuOpen(false);
                 }}
                 className="px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 transition-colors"
               >
-                Recursos
-              </a>
-              <a
-                href="#demonstracao"
-                onClick={() => {
-                  if (currentView !== 'home') handleNavigateSafely('home');
-                  setIsMobileMenuOpen(false);
-                }}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 transition-colors"
-              >
-                Como Funciona
+                Demonstração no Celular
               </a>
               <a
                 href="#planos"
@@ -2079,7 +2076,7 @@ export default function App() {
                 }}
                 className="px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 transition-colors"
               >
-                Planos (R$ 99/mês)
+                Planos (R$ 99/mês Anual)
               </a>
               <a
                 href="#calculadora"
@@ -2214,24 +2211,14 @@ export default function App() {
                     Página Inicial
                   </button>
                   <a
-                    href="#recursos"
+                    href="#demonstracao-celular"
                     onClick={() => {
                       if (currentView !== 'home') handleNavigateSafely('home');
                       setIsMobileMenuOpen(false);
                     }}
                     className="block w-full text-left px-3 py-2.5 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
                   >
-                    Recursos da Plataforma
-                  </a>
-                  <a
-                    href="#demonstracao"
-                    onClick={() => {
-                      if (currentView !== 'home') handleNavigateSafely('home');
-                      setIsMobileMenuOpen(false);
-                    }}
-                    className="block w-full text-left px-3 py-2.5 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
-                  >
-                    Como Funciona &amp; Demonstração
+                    Demonstração no Celular
                   </a>
                   <a
                     href="#planos"
@@ -2241,7 +2228,7 @@ export default function App() {
                     }}
                     className="block w-full text-left px-3 py-2.5 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
                   >
-                    Planos (R$ 99,00/mês Anual ou R$ 129,90/mês)
+                    Planos &amp; Preço (R$ 99,00/mês Anual no Cartão ou R$ 129,90/mês)
                   </a>
                   <a
                     href="#calculadora"
@@ -2253,16 +2240,6 @@ export default function App() {
                   >
                     Calculadora de Economia
                   </a>
-                  <a
-                    href="#faq"
-                    onClick={() => {
-                      if (currentView !== 'home') handleNavigateSafely('home');
-                      setIsMobileMenuOpen(false);
-                    }}
-                    className="block w-full text-left px-3 py-2.5 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
-                  >
-                    Dúvidas Frequentes
-                  </a>
                 </>
               )}
             </div>
@@ -2272,7 +2249,8 @@ export default function App() {
       )}
 
       {/* Main Content Viewport */}
-      <div className={currentView === 'home' ? 'flex-1 w-full' : 'flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6'}>
+      <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
+        <Suspense fallback={<ViewLoadingFallback />}>
         {currentView === 'home' && (
           <LandingPageView
             tenant={tenant}
@@ -2331,9 +2309,7 @@ export default function App() {
                     Link do Cardápio Digital ({tenant.name})
                   </p>
                   <p className="text-[11px] font-mono text-slate-500 truncate">
-                    {typeof window !== 'undefined'
-                      ? `${window.location.origin}${window.location.pathname}?loja=${tenant.slug}`
-                      : `https://${tenant.slug}.com.br`}
+                    {buildPublicMenuUrl(tenant.slug)}
                   </p>
                 </div>
               </div>
@@ -2342,10 +2318,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
-                    const url =
-                      typeof window !== 'undefined'
-                        ? `${window.location.origin}${window.location.pathname}?loja=${encodeURIComponent(tenant.slug)}`
-                        : `https://${tenant.slug}.com.br`;
+                    const url = buildPublicMenuUrl(tenant.slug);
                     navigator.clipboard?.writeText(url).catch(() => {});
                     setTopMenuLinkCopied(true);
                     setTimeout(() => setTopMenuLinkCopied(false), 3000);
@@ -2372,9 +2345,7 @@ export default function App() {
                 <a
                   href={`https://wa.me/?text=${encodeURIComponent(
                     `🍔 Confira o cardápio digital de *${tenant.name}* e faça seu pedido online:\n${
-                      typeof window !== 'undefined'
-                        ? `${window.location.origin}${window.location.pathname}?loja=${encodeURIComponent(tenant.slug)}`
-                        : `https://${tenant.slug}.com.br`
+                      buildPublicMenuUrl(tenant.slug)
                     }`
                   )}`}
                   target="_blank"
@@ -2389,7 +2360,9 @@ export default function App() {
             </div>
             )}
 
-            <ConsumerMenuView
+            {sharedLojaParam && (publicCatalogState.slug!==sharedLojaParam || publicCatalogState.status!=='ready') ? (
+              <p role="status" className="p-6 text-center text-slate-700">{publicCatalogState.status==='error'?'Não foi possível carregar este cardápio. Verifique a conexão e atualize a página.':'Carregando cardápio…'}</p>
+            ) : <ConsumerMenuView
               tenant={tenant}
               categories={categories}
               products={products}
@@ -2400,7 +2373,7 @@ export default function App() {
                 setSelectedTrackingOrder(order);
                 handleNavigateSafely('tracking');
               }}
-            />
+            />}
           </div>
         )}
 
@@ -2425,7 +2398,10 @@ export default function App() {
         )}
 
         {currentView === 'admin' && (isSuperAdmin || (!isTrialExpiredWithoutAsaas && hasActiveSubscription)) && (
-          <RestaurantAdminView
+          <><div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 p-4" role="status">
+            <button type="button" disabled={catalogSaving} onClick={saveCatalog} className="rounded-xl bg-emerald-700 px-4 py-2 font-bold text-white disabled:opacity-50">{catalogSaving ? 'Salvando…' : 'Salvar catálogo'}</button>
+            <span>{catalogSaveState || 'Alterações no catálogo são rascunhos até a confirmação de publicação.'}</span>
+          </div><RestaurantAdminView
             tenant={tenant}
             orders={orders}
             products={products}
@@ -2433,7 +2409,6 @@ export default function App() {
             customers={customers}
             allTenants={tenantsList}
             catalogsByTenant={catalogsByTenant}
-            onCreateTenant={handleTenantCreated}
             onSelectTenant={handleSelectTenant}
             onUpdateTenant={handleUpdateTenant}
             onDeleteTenant={handleDeleteTenant}
@@ -2447,12 +2422,11 @@ export default function App() {
             onImportCatalog={handleImportCatalog}
             onSimulateEvolutionReconnect={handleSimulateEvolutionReconnect}
             authSession={authSession}
-            onOpenAuthPortal={() => handleNavigateSafely('auth')}
             onOpenPublicMenu={() => {
               setSharedLojaParam(tenant.slug);
               handleNavigateSafely('consumer');
             }}
-          />
+          /></>
         )}
         {currentView === 'whatsapp' && (isSuperAdmin || (!isTrialExpiredWithoutAsaas && hasActiveSubscription)) && (
           <WhatsAppAutomationView
@@ -2472,6 +2446,7 @@ export default function App() {
         {currentView === 'diagrams' && (isSuperAdmin || (!isTrialExpiredWithoutAsaas && hasActiveSubscription)) && (
           <TechDiagramsView />
         )}
+        </Suspense>
       </div>
 
       {/* Modal de Bloqueio de Acesso (Teste de 15 Dias Expirado sem Assinatura Asaas ou Sem Assinatura Ativa) */}
@@ -2585,6 +2560,7 @@ export default function App() {
       )}
 
       {/* Clean quiet footer with Terms of Use and Privacy Policy links */}
+      {currentView !== 'home' && (
       <footer className="border-t border-slate-200 bg-white py-5 mt-auto">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-slate-500">
           <div className="flex flex-wrap items-center justify-center md:justify-start gap-3">
@@ -2636,6 +2612,7 @@ export default function App() {
           </div>
         </div>
       </footer>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   MessageSquare,
   Send,
@@ -7,21 +7,15 @@ import {
   CheckCircle2,
   Phone,
   Smartphone,
-  Copy,
   Check,
-  Clock,
   Bike,
   PackageCheck,
   AlertTriangle,
   Flame,
-  ChefHat,
   ShoppingBag,
-  ExternalLink,
-  ChevronRight,
   Info,
   Terminal,
-  Zap,
-  ArrowRight
+  Zap
 } from 'lucide-react';
 import { Order, RestaurantTenant } from '../types';
 
@@ -29,6 +23,7 @@ interface NotificationTemplatesEditorProps {
   tenant: RestaurantTenant;
   orders: Order[];
   isSuperAdmin?: boolean;
+  authToken?: string;
   onUpdateTenant?: (updatedTenant: RestaurantTenant) => void;
   onNavigateToLogs?: () => void;
 }
@@ -112,18 +107,18 @@ const DEFAULT_TEMPLATES: Record<TemplateKey, string> = {
 };
 
 const VARIABLE_PILLS = [
-  { tag: '{cliente_primeiro_nome}', label: 'Primeiro Nome', tooltip: 'Ex: Adriano' },
-  { tag: '{cliente_nome}', label: 'Nome Completo', tooltip: 'Ex: Adriano Saraiva' },
+  { tag: '{cliente_primeiro_nome}', label: 'Primeiro Nome', tooltip: 'Ex: Cliente' },
+  { tag: '{cliente_nome}', label: 'Nome Completo', tooltip: 'Ex: Cliente Exemplo' },
   { tag: '{numero_pedido}', label: 'Nº Pedido', tooltip: 'Ex: 1042' },
   { tag: '{restaurante_nome}', label: 'Restaurante', tooltip: 'Ex: Brasas & Burger Artesanal' },
   { tag: '{tipo_pedido}', label: 'Tipo Entrega', tooltip: 'Ex: Entrega ou Retirada' },
-  { tag: '{endereco_entrega}', label: 'Endereço', tooltip: 'Ex: Av. Consolação, 1420' },
+  { tag: '{endereco_entrega}', label: 'Endereço', tooltip: 'Ex: Rua Exemplo, 100' },
   { tag: '{previsao_minutos}', label: 'Previsão (Min)', tooltip: 'Ex: 35' },
   { tag: '{total}', label: 'Total R$', tooltip: 'Ex: R$ 85,80' },
   { tag: '{itens_resumo}', label: 'Resumo Itens', tooltip: 'Ex: 1x Smash Bacon, 1x Costela' },
   { tag: '{forma_pagamento}', label: 'Forma Pagto', tooltip: 'Ex: Pix no Recebimento' },
   { tag: '{link_rastreamento}', label: 'Link Rastreamento', tooltip: 'https://.../pedido/:id' },
-  { tag: '{restaurante_endereco}', label: 'Endereço Loja', tooltip: 'Ex: Av. Paulista, 1200' },
+  { tag: '{restaurante_endereco}', label: 'Endereço Loja', tooltip: 'Ex: Avenida Exemplo, 100' },
 ];
 
 const DEFAULT_MOCK_ORDER: Order = {
@@ -131,11 +126,11 @@ const DEFAULT_MOCK_ORDER: Order = {
   tenantId: 'tenant_aladay_01',
   tenantSlug: 'aladay',
   orderNumber: 1042,
-  customerName: 'Adriano Saraiva',
-  customerPhone: '559181214188',
+  customerName: 'Cliente Exemplo',
+  customerPhone: '',
   type: 'delivery',
-  deliveryAddress: 'Av. Consolação, 1420, Apto 52 - Bela Vista',
-  deliveryZoneName: 'Bela Vista / Consolação',
+  deliveryAddress: 'Rua Exemplo, 100 - Bairro Exemplo',
+  deliveryZoneName: 'Bairro Exemplo',
   estimatedMinutes: 35,
   items: [
     { productId: 'p1', productName: 'Smash Bacon Duplo Especial', quantity: 1, unitPriceCents: 3490, totalCents: 4090, selectedOptions: [] },
@@ -157,6 +152,7 @@ export const NotificationTemplatesEditor: React.FC<NotificationTemplatesEditorPr
   tenant,
   orders = [],
   isSuperAdmin = false,
+  authToken,
   onUpdateTenant,
   onNavigateToLogs,
 }) => {
@@ -186,15 +182,13 @@ export const NotificationTemplatesEditor: React.FC<NotificationTemplatesEditorPr
   const currentOrder = sampleOrders.find((o) => o?.id === selectedOrderId) || sampleOrders[0] || DEFAULT_MOCK_ORDER;
 
   const [testPhone, setTestPhone] = useState<string>(() => {
-    return currentOrder?.customerPhone || '559181214188';
+    return currentOrder?.customerPhone || '';
   });
 
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [testSuccessMessage, setTestSuccessMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
-  const [copiedLink, setCopiedLink] = useState(false);
-
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Interpolate tags for preview
@@ -205,7 +199,7 @@ export const NotificationTemplatesEditor: React.FC<NotificationTemplatesEditorPr
     const totalFormatted = `R$ ${(((currentOrder?.totalCents ?? 8580)) / 100).toFixed(2).replace('.', ',')}`;
     const subtotalFormatted = `R$ ${(((currentOrder?.subtotalCents ?? 7980)) / 100).toFixed(2).replace('.', ',')}`;
     const deliveryFeeFormatted = `R$ ${(((currentOrder?.deliveryFeeCents ?? 600)) / 100).toFixed(2).replace('.', ',')}`;
-    const trackingUrl = `https://agencia-n8n.2eoc7n.easypanel.host/pedido/${currentOrder?.id || 'ord_1042'}`;
+    const trackingUrl = `https://integration.example.invalid${currentOrder?.id || 'ord_1042'}`;
     const itemsSummary = (currentOrder?.items || [])
       .map((i: any) => `${i?.quantity || 1}x ${i?.productName || 'Item'}`)
       .join(', ') || 'Smash Bacon Duplo Especial';
@@ -220,7 +214,7 @@ export const NotificationTemplatesEditor: React.FC<NotificationTemplatesEditorPr
       cliente_primeiro_nome: customerFirstName,
       numero_pedido: orderNum,
       restaurante_nome: tenant?.name || 'Restaurante',
-      restaurante_endereco: tenant?.address || 'Av. Paulista, 1200',
+      restaurante_endereco: tenant?.address || 'Avenida Exemplo, 100',
       restaurante_telefone: tenant?.phone || '',
       tipo_pedido: orderType,
       endereco_entrega: address,
@@ -277,7 +271,10 @@ export const NotificationTemplatesEditor: React.FC<NotificationTemplatesEditorPr
     try {
       const res = await fetch(`/api/v1/tenants/${tenant.slug}/notification-templates`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
         body: JSON.stringify({ templates }),
       });
 
@@ -300,18 +297,25 @@ export const NotificationTemplatesEditor: React.FC<NotificationTemplatesEditorPr
 
   // Send real test notification via Evolution API
   const handleSendTestWhatsApp = async () => {
+    if (!/^55\d{10,11}$/.test(testPhone.replace(/\D/g, ''))) {
+      setTestSuccessMessage('Informe um número de destino válido com DDI e DDD.');
+      return;
+    }
     setIsSendingTest(true);
     setTestSuccessMessage(null);
 
     try {
       const res = await fetch('/api/v1/notifications/test-send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
         body: JSON.stringify({
           tenantSlug: tenant?.slug || 'aladay',
           templateKey: selectedKey,
           customText: templates[selectedKey],
-          customPhone: testPhone || '559181214188',
+          customPhone: testPhone || '',
           orderId: currentOrder?.id || 'ord_1042',
         }),
       });
@@ -321,7 +325,7 @@ export const NotificationTemplatesEditor: React.FC<NotificationTemplatesEditorPr
         const textResp = await res.text();
         console.warn('Servidor retornou resposta não-JSON:', textResp.slice(0, 100));
         setTestSuccessMessage(
-          `Notificação simulada e registrada para o WhatsApp ${testPhone || '559181214188'}!`
+          `Notificação simulada e registrada para o WhatsApp ${testPhone || ''}!`
         );
         return;
       }
@@ -339,7 +343,7 @@ export const NotificationTemplatesEditor: React.FC<NotificationTemplatesEditorPr
     } catch (err: any) {
       console.error('Error sending test notification:', err);
       setTestSuccessMessage(
-        `Disparo registrado localmente para o WhatsApp ${testPhone || '559181214188'}.`
+        `Disparo registrado localmente para o WhatsApp ${testPhone || ''}.`
       );
     } finally {
       setIsSendingTest(false);
@@ -570,20 +574,20 @@ export const NotificationTemplatesEditor: React.FC<NotificationTemplatesEditorPr
                   type="text"
                   value={testPhone}
                   onChange={(e) => setTestPhone(e.target.value)}
-                  placeholder="559181214188"
+                  placeholder="Informe DDI, DDD e número"
                   className="flex-1 p-2 border border-neutral-300 rounded-lg text-xs font-mono focus:outline-neutral-900"
                 />
                 <button
                   type="button"
-                  onClick={() => setTestPhone('559181214188')}
+                  onClick={() => setTestPhone(currentOrder?.customerPhone || '')}
                   className="px-2.5 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-lg text-[10px] font-semibold border border-neutral-200"
-                  title="Usar número do Adriano do webhook"
+                  title="Usar contato do pedido selecionado"
                 >
-                  Padrão (Adriano)
+                  Contato do pedido
                 </button>
               </div>
               <p className="text-[10px] text-neutral-400 mt-1">
-                Formato com DDI e DDD (ex: 559181214188). Envia diretamente via instância conectada.
+                Informe o número de destino com DDI e DDD. Envia diretamente via instância conectada.
               </p>
             </div>
 

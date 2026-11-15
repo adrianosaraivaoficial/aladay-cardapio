@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useMemo, useEffect } from 'react';
 import {
   LayoutGrid,
   Utensils,
@@ -8,7 +8,6 @@ import {
   QrCode,
   RefreshCw,
   CheckCircle2,
-  Phone,
   Check,
   X,
   ArrowRight,
@@ -16,19 +15,14 @@ import {
   Edit2,
   Trash2,
   Settings,
-  HelpCircle,
   Clock,
-  Sparkles,
-  DollarSign,
   AlertCircle,
   CreditCard,
   Printer,
-  FileText,
   Download,
   ShieldCheck,
   Copy,
   Search,
-  SlidersHorizontal,
   Smartphone,
   ChevronDown,
   ChevronUp,
@@ -42,17 +36,8 @@ import {
   Lock
 } from 'lucide-react';
 import QRCode from 'qrcode';
-import { AuthSession, Category, CustomerRecord, DeliveryZone, NormalizedTenantCatalog, OptionGroup, OptionItem, Order, OrderStatus, PixGatewayConfig, Product, RestaurantTenant, UserRole } from '../types';
-import { ThermalTicketModal } from './ThermalTicketModal';
-import { ConsumerMenuView } from './ConsumerMenuView';
-import { WhatsAppAutomationView } from './WhatsAppAutomationView';
-import { OrderTrackingView } from './OrderTrackingView';
-import { WhatsAppQrPairingModal } from './WhatsAppQrPairingModal';
-import { AsaasSubscriptionBillingView } from './AsaasSubscriptionBillingView';
-import { AuditedDashboardView } from './AuditedDashboardView';
-import { CrmCustomerManagementView } from './CrmCustomerManagementView';
-import { IfoodIntegrationView } from './IfoodIntegrationView';
-import { TableWaiterManagementView } from './TableWaiterManagementView';
+import { AuthSession, Category, CustomerRecord, DeliveryZone, NormalizedTenantCatalog, OptionGroup, Order, OrderStatus, PixGatewayConfig, Product, RestaurantTenant, UserRole } from '../types';
+import { ViewLoadingFallback } from './ViewLoadingFallback';
 import {
   MenuSpreadsheetModal,
   ParsedRowPreview,
@@ -62,6 +47,54 @@ import {
   escapeCsvCell,
   readUploadedSpreadsheetFile,
 } from './MenuSpreadsheetModal';
+import { optimizeImageFile } from '../utils/imageOptimization';
+import { buildPublicMenuPath, buildPublicMenuUrl, buildPublicTableUrl } from '../utils/publicMenuUrl';
+
+const ThermalTicketModal = lazy(() =>
+  import('./ThermalTicketModal').then((module) => ({ default: module.ThermalTicketModal }))
+);
+const ConsumerMenuView = lazy(() =>
+  import('./ConsumerMenuView').then((module) => ({ default: module.ConsumerMenuView }))
+);
+const WhatsAppAutomationView = lazy(() =>
+  import('./WhatsAppAutomationView').then((module) => ({ default: module.WhatsAppAutomationView }))
+);
+const OrderTrackingView = lazy(() =>
+  import('./OrderTrackingView').then((module) => ({ default: module.OrderTrackingView }))
+);
+const WhatsAppQrPairingModal = lazy(() =>
+  import('./WhatsAppQrPairingModal').then((module) => ({ default: module.WhatsAppQrPairingModal }))
+);
+const AsaasSubscriptionBillingView = lazy(() =>
+  import('./AsaasSubscriptionBillingView').then((module) => ({ default: module.AsaasSubscriptionBillingView }))
+);
+const AuditedDashboardView = lazy(() =>
+  import('./AuditedDashboardView').then((module) => ({ default: module.AuditedDashboardView }))
+);
+const CrmCustomerManagementView = lazy(() =>
+  import('./CrmCustomerManagementView').then((module) => ({ default: module.CrmCustomerManagementView }))
+);
+const IfoodIntegrationView = lazy(() =>
+  import('./IfoodIntegrationView').then((module) => ({ default: module.IfoodIntegrationView }))
+);
+const TableWaiterManagementView = lazy(() =>
+  import('./TableWaiterManagementView').then((module) => ({ default: module.TableWaiterManagementView }))
+);
+const MenuImportView = lazy(() =>
+  import('./MenuImportView').then((module) => ({ default: module.MenuImportView }))
+);
+const CrmMigrationView = lazy(() =>
+  import('./CrmMigrationView').then((module) => ({ default: module.CrmMigrationView }))
+);
+const AnalyticsView = lazy(() =>
+  import('./AnalyticsView').then((module) => ({ default: module.AnalyticsView }))
+);
+const UpsellRulesView = lazy(() =>
+  import('./UpsellRulesView').then((module) => ({ default: module.UpsellRulesView }))
+);
+const FeedbackAdminView = lazy(() =>
+  import('./FeedbackAdminView').then((module) => ({ default: module.FeedbackAdminView }))
+);
 
 interface RestaurantAdminViewProps {
   tenant: RestaurantTenant;
@@ -71,11 +104,10 @@ interface RestaurantAdminViewProps {
   customers: CustomerRecord[];
   allTenants?: RestaurantTenant[];
   catalogsByTenant?: Record<string, NormalizedTenantCatalog>;
-  onCreateTenant?: (newTenant: RestaurantTenant) => void;
   onSelectTenant?: (tenant: RestaurantTenant) => void;
   onDeleteTenant?: (slug: string) => void;
   onUpdateTenant: (updatedTenant: RestaurantTenant) => void;
-  onUpdateOrderStatus: (orderId: string, nextStatus: OrderStatus) => void;
+  onUpdateOrderStatus: (orderId: string, nextStatus: OrderStatus) => void | Promise<boolean>;
   onAddOrder?: (newOrder: Order) => void;
   onToggleProductAvailability: (productId: string) => void;
   onAddProduct: (newProduct: Product) => void;
@@ -85,7 +117,6 @@ interface RestaurantAdminViewProps {
   onImportCatalog?: (newCategories: Category[], newProducts: Product[], mode: 'merge' | 'replace') => void;
   onSimulateEvolutionReconnect: () => void;
   authSession?: AuthSession | null;
-  onOpenAuthPortal?: () => void;
   onOpenPublicMenu?: () => void;
 }
 
@@ -97,7 +128,6 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
   customers,
   allTenants = [],
   catalogsByTenant = {},
-  onCreateTenant,
   onSelectTenant,
   onDeleteTenant,
   onUpdateTenant,
@@ -111,18 +141,17 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
   onImportCatalog,
   onSimulateEvolutionReconnect,
   authSession,
-  onOpenAuthPortal,
   onOpenPublicMenu,
 }) => {
   const isSuperAdmin = authSession?.user?.role === 'SUPER_ADMIN';
   const [publicLinkCopied, setPublicLinkCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<'super_subscriptions' | 'kds' | 'tables' | 'menu' | 'categories' | 'settings' | 'billing' | 'whatsapp' | 'crm' | 'reports' | 'ifood'>(() =>
+  const [crmRefreshVersion, setCrmRefreshVersion] = useState(0);
+  const [activeTab, setActiveTab] = useState<'super_subscriptions' | 'kds' | 'tables' | 'menu' | 'categories' | 'settings' | 'billing' | 'whatsapp' | 'crm' | 'reports' | 'ifood' | 'intelligence'>(() =>
     authSession?.user?.role === 'SUPER_ADMIN' ? 'super_subscriptions' : 'menu'
   );
   const [printingOrder, setPrintingOrder] = useState<Order | null>(null);
   const [trackingOrderModal, setTrackingOrderModal] = useState<Order | null>(null);
   const [statusUpdateToast, setStatusUpdateToast] = useState<string | null>(null);
-  const [testMsgStatus, setTestMsgStatus] = useState<string | null>(null);
   const [isQrPairingModalOpen, setIsQrPairingModalOpen] = useState(false);
   const [isTopBarHoursModalOpen, setIsTopBarHoursModalOpen] = useState(false);
   const [topBarDaysPreset, setTopBarDaysPreset] = useState('Segunda a Domingo');
@@ -130,14 +159,9 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
   const [topBarCloseTime, setTopBarCloseTime] = useState('23:45');
   const [spreadsheetModalTab, setSpreadsheetModalTab] = useState<'export' | 'import' | null>(null);
 
-  // Super Admin state for filtering and provisioning restaurants
+  // Super Admin state for filtering restaurants
   const [superAdminSearch, setSuperAdminSearch] = useState('');
   const [superAdminStatusFilter, setSuperAdminStatusFilter] = useState<'all' | 'active' | 'trial' | 'past_due'>('all');
-  const [isCreatingNewTenant, setIsCreatingNewTenant] = useState(false);
-  const [newTenantName, setNewTenantName] = useState('');
-  const [newTenantSlug, setNewTenantSlug] = useState('');
-  const [newTenantPhone, setNewTenantPhone] = useState('');
-  const [newTenantPlanStatus, setNewTenantPlanStatus] = useState<'active' | 'trial'>('trial');
   const [superAdminActionNotice, setSuperAdminActionNotice] = useState<string | null>(null);
 
   // Dedicated 'Importação de Cardápio' Modal State
@@ -247,8 +271,12 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
       });
 
       const [asaasRes, subRes] = await Promise.all([
-        fetch(`/api/v1/asaas/pix/status?${query.toString()}`),
-        fetch(`/api/v1/asaas/subscription/${encodeURIComponent(tenant.slug)}/check-status`),
+        fetch(`/api/v1/asaas/pix/status?${query.toString()}`, {
+          headers: authSession?.token ? { Authorization: `Bearer ${authSession.token}` } : {},
+        }),
+        fetch(`/api/v1/asaas/subscription/${encodeURIComponent(tenant.slug)}/check-status`, {
+          headers: authSession?.token ? { Authorization: `Bearer ${authSession.token}` } : {},
+        }),
       ]);
 
       let paid = order.paymentStatus === 'paid_online' || order.pixTransaction?.status === 'PAID';
@@ -354,7 +382,9 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
     });
     setAsaasSubscriptionPixCheck((prev) => ({ ...prev, isChecking: true }));
     try {
-      const res = await fetch(`/api/v1/asaas/subscription/${encodeURIComponent(tenant.slug)}/check-status`);
+      const res = await fetch(`/api/v1/asaas/subscription/${encodeURIComponent(tenant.slug)}/check-status`, {
+        headers: authSession?.token ? { Authorization: `Bearer ${authSession.token}` } : {},
+      });
       if (res.ok) {
         const data = await res.json();
         const isPaid = Boolean(data.paid || data.status === 'RECEIVED' || data.status === 'CONFIRMED');
@@ -464,7 +494,7 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
       }
     }
 
-    onUpdateOrderStatus(order.id, nextStatus);
+    if (await onUpdateOrderStatus(order.id, nextStatus) === false) return;
 
     if (order.channel === 'IFOOD') {
       try {
@@ -567,7 +597,6 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
   const [newZoneMinutes, setNewZoneMinutes] = useState('40');
 
   // Pix Key & Beneficiary Name Editor state (Cada restaurante define sua própria Chave Pix e Nome do Beneficiário)
-  const [isEditingPixKey, setIsEditingPixKey] = useState(true);
   const [pixKey, setPixKey] = useState(
     tenant.pixKey || tenant.pixConfig?.pixKey || tenant.phone || ''
   );
@@ -587,11 +616,6 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
   const [pixBankName, setPixBankName] = useState(
     tenant.pixConfig?.bankName || 'Conta Bancária do Proprietário'
   );
-  const [pixProvider, setPixProvider] = useState<PixGatewayConfig['provider']>(
-    tenant.pixConfig?.provider || 'direct_bank'
-  );
-  const [pixSaving, setPixSaving] = useState(false);
-  const [pixSaveNotice, setPixSaveNotice] = useState<string | null>(null);
 
   useEffect(() => {
     setSettingsName(tenant.name);
@@ -618,7 +642,6 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
     );
     setPixMerchantCity(tenant.pixConfig?.merchantCity || 'SAO PAULO');
     setPixBankName(tenant.pixConfig?.bankName || 'Conta Bancária do Proprietário');
-    setPixProvider(tenant.pixConfig?.provider || 'direct_bank');
   }, [tenant]);
 
   // Group orders by KDS status
@@ -747,27 +770,6 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
     };
   };
 
-  // Dashboard Metrics
-  const dashboardMetrics = useMemo(() => {
-    const totalReceived = orders.length;
-    const completedOrders = orders.filter((o) => o.status === 'delivered');
-    const cancelledOrders = orders.filter((o) => o.status === 'cancelled');
-
-    const totalConcludedRevenueCents = completedOrders.reduce((acc, o) => acc + o.totalCents, 0);
-    const averageTicketCents =
-      completedOrders.length > 0 ? Math.round(totalConcludedRevenueCents / completedOrders.length) : 0;
-    const cancellationRate = totalReceived > 0 ? (cancelledOrders.length / totalReceived) * 100 : 0;
-
-    return {
-      totalReceived,
-      completedCount: completedOrders.length,
-      cancelledCount: cancelledOrders.length,
-      totalConcludedRevenueCents,
-      averageTicketCents,
-      cancellationRate,
-    };
-  }, [orders]);
-
   const formatBRL = (cents: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100);
   };
@@ -820,6 +822,11 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
       .filter((c) => c.id !== cat.id)
       .map((c, i) => ({ ...c, order: i + 1 }));
     const fallbackCatId = remainingCats[0]?.id;
+    const affectedCount = products.filter((p) => p.categoryId === cat.id).length;
+    const consequence = fallbackCatId
+      ? `${affectedCount} produto(s) serão movidos para a categoria "${remainingCats[0].name}".`
+      : `${affectedCount} produto(s) desta categoria serão apagados.`;
+    if (!window.confirm(`Excluir a categoria "${cat.name}"? ${consequence}`)) return;
     const updatedProducts = fallbackCatId
       ? products.map((p) => (p.categoryId === cat.id ? { ...p, categoryId: fallbackCatId } : p))
       : products.filter((p) => p.categoryId !== cat.id);
@@ -1272,49 +1279,17 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
     }
   };
 
-  const handleProductImageFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleProductImageFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = String(ev.target?.result || '');
-      if (!dataUrl) return;
-
-      // Compress/resize image via canvas so mobile camera photos (4MB+) fit cleanly in state/localStorage
-      const img = new Image();
-      img.onload = () => {
-        const maxDim = 800;
-        let width = img.width;
-        let height = img.height;
-        if (width > maxDim || height > maxDim) {
-          if (width > height) {
-            height = Math.round((height * maxDim) / width);
-            width = maxDim;
-          } else {
-            width = Math.round((width * maxDim) / height);
-            height = maxDim;
-          }
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
-          setProdImageUrl(compressedDataUrl);
-        } else {
-          setProdImageUrl(dataUrl);
-        }
-      };
-      img.onerror = () => {
-        setProdImageUrl(dataUrl);
-      };
-      img.src = dataUrl;
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
+    try {
+      setProdImageUrl(await optimizeImageFile(file, { maxDimension: 960, quality: 0.78 }));
+      triggerSyncNotice('Imagem otimizada em WebP e pronta para salvar.');
+    } catch (error) {
+      triggerSyncNotice(error instanceof Error ? error.message : 'Não foi possível otimizar a imagem.');
+    } finally {
+      e.target.value = '';
+    }
   };
 
   const handleLoadSampleImportTable = () => {
@@ -1540,46 +1515,17 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
     setIsImportMenuModalOpen(false);
   };
 
-  const handleRestaurantLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleRestaurantLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = String(ev.target?.result || '');
-      if (!dataUrl) return;
-      const img = new Image();
-      img.onload = () => {
-        const maxDim = 256;
-        let w = img.width;
-        let h = img.height;
-        if (w > maxDim || h > maxDim) {
-          if (w > h) {
-            h = Math.round((h * maxDim) / w);
-            w = maxDim;
-          } else {
-            w = Math.round((w * maxDim) / h);
-            h = maxDim;
-          }
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, w, h);
-          const compressed = canvas.toDataURL('image/webp', 0.85);
-          setSettingsLogoUrl(compressed);
-        } else {
-          setSettingsLogoUrl(dataUrl);
-        }
-      };
-      img.onerror = () => {
-        setSettingsLogoUrl(dataUrl);
-      };
-      img.src = dataUrl;
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
+    try {
+      setSettingsLogoUrl(await optimizeImageFile(file, { maxDimension: 320, quality: 0.82 }));
+      triggerSyncNotice('Logo otimizada em WebP e pronta para salvar.');
+    } catch (error) {
+      triggerSyncNotice(error instanceof Error ? error.message : 'Não foi possível otimizar a logo.');
+    } finally {
+      e.target.value = '';
+    }
   };
 
   const handleSaveSettings = async (e: React.FormEvent) => {
@@ -1666,67 +1612,6 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
     setTimeout(() => setSettingsSuccessNotice(null), 4500);
   };
 
-  const handleSavePixConfig = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!pixKey.trim()) return;
-
-    setPixSaving(true);
-    try {
-      const cleanPixKey = pixKey.trim();
-      const cleanBeneficiary = (pixMerchantName.trim() || tenant.name || 'MEU RESTAURANTE').slice(0, 60);
-
-      const payload: PixGatewayConfig = {
-        provider: 'direct_bank',
-        pixKey: cleanPixKey,
-        pixKeyType: pixKeyType,
-        beneficiaryName: cleanBeneficiary,
-        merchantName: cleanBeneficiary.slice(0, 25),
-        merchantCity: (pixMerchantCity.trim() || 'SAO PAULO').slice(0, 15).toUpperCase(),
-        bankName: pixBankName.trim() || 'Conta Bancária do Proprietário',
-        autoApproveWebhook: true,
-      };
-
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (authSession?.token) {
-        headers['Authorization'] = `Bearer ${authSession.token}`;
-      }
-
-      await fetch(`/api/v1/tenants/${tenant.slug}/pix-config`, {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify(payload),
-      });
-
-      const updatedTenant: RestaurantTenant = {
-        ...tenant,
-        pixKey: cleanPixKey,
-        pixBeneficiaryName: cleanBeneficiary,
-        pixConfig: payload,
-      };
-
-      onUpdateTenant(updatedTenant);
-      setPixSaveNotice(
-        `Chave Pix "${cleanPixKey}" e Beneficiário "${cleanBeneficiary}" salvos com sucesso para ${tenant.name}!`
-      );
-      triggerSyncNotice(
-        `✅ Chave Pix ("${cleanPixKey}") e Nome do Beneficiário ("${cleanBeneficiary}") salvos! O QR Code Pix do checkout já utiliza esses dados.`
-      );
-      setStatusUpdateToast(
-        `✅ Chave Pix de ${tenant.name} atualizada para "${cleanPixKey}" (${cleanBeneficiary})!`
-      );
-      setTimeout(() => {
-        setPixSaveNotice(null);
-        setStatusUpdateToast(null);
-      }, 5000);
-    } catch (err) {
-      console.error('Erro ao salvar Pix config:', err);
-      setStatusUpdateToast('Erro ao salvar chave Pix.');
-      setTimeout(() => setStatusUpdateToast(null), 3000);
-    } finally {
-      setPixSaving(false);
-    }
-  };
-
   const handleAddDeliveryZone = () => {
     if (!newZoneName.trim()) return;
     const feeCents = Math.round(parseFloat(newZoneFee.replace(',', '.')) * 100) || 0;
@@ -1765,15 +1650,8 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
     setIsCategoryModalOpen(false);
   };
 
-  const handleSendTestWhatsApp = () => {
-    setTestMsgStatus('Enviando via Evolution API...');
-    setTimeout(() => {
-      setTestMsgStatus('Mensagem de teste enviada com sucesso no WhatsApp!');
-      setTimeout(() => setTestMsgStatus(null), 3000);
-    }, 800);
-  };
-
   return (
+    <Suspense fallback={<ViewLoadingFallback />}>
     <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden min-h-[720px] flex flex-col shadow-xs">
       {/* Top Header: Dedicated Global Console for Super Admin vs Restaurant Profile for Tenants */}
       {isSuperAdmin ? (
@@ -1817,17 +1695,6 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
               </select>
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('super_subscriptions');
-                setIsCreatingNewTenant(true);
-              }}
-              className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Novo Restaurante</span>
-            </button>
           </div>
         </div>
       ) : (
@@ -1959,9 +1826,7 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
               type="button"
               onClick={() => {
                 const publicUrl =
-                  typeof window !== 'undefined'
-                    ? `${window.location.origin}${window.location.pathname}?loja=${encodeURIComponent(tenant.slug)}`
-                    : `https://aladay.com.br/?loja=${encodeURIComponent(tenant.slug)}`;
+                  buildPublicMenuUrl(tenant.slug);
                 navigator.clipboard?.writeText(publicUrl).catch(() => {});
                 setPublicLinkCopied(true);
                 setTimeout(() => setPublicLinkCopied(false), 3000);
@@ -1990,7 +1855,7 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
               type="button"
               onClick={() => {
                 if (typeof window !== 'undefined') {
-                  const newUrl = `${window.location.pathname}?loja=${encodeURIComponent(tenant.slug)}`;
+                  const newUrl = buildPublicMenuPath(tenant.slug);
                   window.history.pushState({ loja: tenant.slug }, '', newUrl);
                 }
                 if (onOpenPublicMenu) {
@@ -2261,6 +2126,12 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
 
       {/* Tabs navigation */}
       <div className="bg-white border-b border-slate-200 px-4 sm:px-6 flex gap-4 sm:gap-6 text-xs font-medium overflow-x-auto">
+        {(isSuperAdmin || authSession?.user.role === 'TENANT_OWNER') && (
+          <button type="button" onClick={() => setActiveTab('intelligence')}
+            className={`py-3 border-b-2 flex items-center gap-2 whitespace-nowrap shrink-0 ${activeTab === 'intelligence' ? 'border-blue-600 text-blue-600 font-semibold' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+            <Zap className="w-4 h-4" /><span>Inteligência</span>
+          </button>
+        )}
         {isSuperAdmin ? (
           <>
             <button
@@ -2476,6 +2347,14 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
 
       {/* Main Content Body */}
       <div className="p-6 flex-1 overflow-y-auto">
+        {activeTab === 'intelligence' && (isSuperAdmin || authSession?.user.role === 'TENANT_OWNER') && (
+          <div className="space-y-6">
+          <MenuImportView key={tenant.slug} tenant={tenant} authSession={authSession} />
+          <AnalyticsView key={`analytics_${tenant.slug}`} tenant={tenant} authSession={authSession} />
+          <UpsellRulesView key={`upsell_${tenant.slug}`} tenant={tenant} authSession={authSession} products={products} categories={categories} />
+          <FeedbackAdminView key={`feedback_${tenant.slug}`} tenant={tenant} authSession={authSession} orders={orders} />
+          </div>
+        )}
         {/* ============================================================== */}
         {/* TAB 1: UNIFIED MENU, PRODUCTS & CATEGORIES CRUD                */}
         {/* ============================================================== */}
@@ -2776,6 +2655,8 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
                                         <img
                                           src={prod.imageUrl}
                                           alt={prod.name}
+                                          loading="lazy"
+                                          decoding="async"
                                           className="w-11 h-11 rounded-lg object-cover bg-neutral-100 shrink-0"
                                         />
                                       ) : (
@@ -3372,7 +3253,7 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
                       Link do QR Code de Mesa deste Restaurante:
                     </span>
                     <p className="font-mono text-[11px] text-amber-900 truncate">
-                      {typeof window !== 'undefined' ? `${window.location.origin}/?loja=${tenant.slug}&mesa=01` : `https://aladay.com.br/?loja=${tenant.slug}&mesa=01`}
+                      {buildPublicTableUrl(tenant.slug, '01')}
                     </p>
                     <p className="text-[10px] text-neutral-500">
                       Ao ler o QR Code com o celular, o cardápio abre automaticamente configurado para a mesa do cliente com 0% taxa de entrega.
@@ -4340,124 +4221,6 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Provision / Create New Restaurant Drawer */}
-                  {isCreatingNewTenant && (
-                    <div className="bg-white border-2 border-indigo-600 rounded-xl p-5 shadow-md space-y-4">
-                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                        <div>
-                          <h3 className="text-sm font-bold text-slate-900">
-                            Cadastrar &amp; Configurar Novo Restaurante na Plataforma
-                          </h3>
-                          <p className="text-xs text-slate-500">
-                            Crie um novo tenant isolado para configurar seus dados, WhatsApp e assinatura.
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setIsCreatingNewTenant(false)}
-                          className="text-slate-400 hover:text-slate-700"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-
-                      <form
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          if (!newTenantName.trim()) return;
-                          const cleanSlug =
-                            (newTenantSlug.trim() || newTenantName.trim())
-                              .toLowerCase()
-                              .normalize('NFD')
-                              .replace(/[\u0300-\u036f]/g, '')
-                              .replace(/[^a-z0-9]+/g, '-')
-                              .replace(/(^-|-$)/g, '') || `restaurante-${Date.now()}`;
-
-                          const created: RestaurantTenant = {
-                            ...tenant,
-                            id: `tenant_${Date.now()}`,
-                            name: newTenantName.trim(),
-                            slug: cleanSlug,
-                            phone: newTenantPhone.trim() || '5511999999999',
-                            evolutionInstanceId: cleanSlug,
-                            evolutionStatus: 'disconnected',
-                            subscriptionStatus: newTenantPlanStatus,
-                            trialEndsAt:
-                              newTenantPlanStatus === 'trial'
-                                ? new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString()
-                                : undefined,
-                          };
-
-                          if (onCreateTenant) {
-                            onCreateTenant(created);
-                          }
-                          if (onSelectTenant) {
-                            onSelectTenant(created);
-                          }
-                          setNewTenantName('');
-                          setNewTenantSlug('');
-                          setNewTenantPhone('');
-                          setIsCreatingNewTenant(false);
-                          setSuperAdminActionNotice(
-                            `Restaurante "${created.name}" (${created.slug}) criado e selecionado para configuração!`
-                          );
-                        }}
-                        className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs"
-                      >
-                        <div>
-                          <label className="block font-semibold text-slate-700 mb-1">Nome do Restaurante</label>
-                          <input
-                            type="text"
-                            required
-                            value={newTenantName}
-                            onChange={(e) => setNewTenantName(e.target.value)}
-                            placeholder="Ex: Burger House"
-                            className="w-full p-2.5 border border-slate-300 rounded-lg"
-                          />
-                        </div>
-                        <div>
-                          <label className="block font-semibold text-slate-700 mb-1">Slug (URL da Loja)</label>
-                          <input
-                            type="text"
-                            value={newTenantSlug}
-                            onChange={(e) => setNewTenantSlug(e.target.value)}
-                            placeholder="Ex: burger-house"
-                            className="w-full p-2.5 border border-slate-300 rounded-lg font-mono"
-                          />
-                        </div>
-                        <div>
-                          <label className="block font-semibold text-slate-700 mb-1">WhatsApp do Responsável</label>
-                          <input
-                            type="text"
-                            value={newTenantPhone}
-                            onChange={(e) => setNewTenantPhone(e.target.value)}
-                            placeholder="5511999999999"
-                            className="w-full p-2.5 border border-slate-300 rounded-lg font-mono"
-                          />
-                        </div>
-                        <div>
-                          <label className="block font-semibold text-slate-700 mb-1">Status Inicial da Assinatura</label>
-                          <div className="flex gap-2">
-                            <select
-                              value={newTenantPlanStatus}
-                              onChange={(e) => setNewTenantPlanStatus(e.target.value as 'active' | 'trial')}
-                              className="flex-1 p-2.5 border border-slate-300 rounded-lg bg-white font-semibold"
-                            >
-                              <option value="trial">Teste Grátis 15d</option>
-                              <option value="active">Assinatura Ativa</option>
-                            </select>
-                            <button
-                              type="submit"
-                              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-colors cursor-pointer"
-                            >
-                              Criar
-                            </button>
-                          </div>
-                        </div>
-                      </form>
-                    </div>
-                  )}
-
                   {/* Restaurants & Subscriptions Management Table */}
                   <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs space-y-4">
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
@@ -4544,6 +4307,8 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
                                         <img
                                           src={itemTenant.logoUrl}
                                           alt={itemTenant.name}
+                                          loading="lazy"
+                                          decoding="async"
                                           className="w-full h-full object-cover"
                                         />
                                       ) : (
@@ -4774,12 +4539,17 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
         {/* TAB 6: CRM & CLIENTES ISOLADOS COM HISTÓRICO DE PEDIDOS        */}
         {/* ============================================================== */}
         {activeTab === 'crm' && !isSuperAdmin && (
+          <div>
+          <CrmMigrationView key={tenant.slug} tenant={tenant} authSession={authSession} onMigrated={() => setCrmRefreshVersion(version => version + 1)} />
           <CrmCustomerManagementView
+            key={`${tenant.slug}_${crmRefreshVersion}`}
             tenant={tenant}
+            authSession={authSession}
             orders={orders}
             customers={customers}
             onPrintOrder={(order) => setPrintingOrder(order)}
           />
+          </div>
         )}
 
         {/* ============================================================== */}
@@ -4940,6 +4710,7 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
               tenant={tenant}
               onUpdateTenant={onUpdateTenant}
               isSuperAdmin={isSuperAdmin}
+              authToken={authSession?.token}
             />
           </div>
         )}
@@ -5000,6 +4771,7 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
         {activeTab === 'tables' && (
           <TableWaiterManagementView
             tenant={tenant}
+            authSession={authSession}
             orders={orders}
             products={products}
             categories={categories}
@@ -5106,6 +4878,7 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
                     <img
                       src={prodImageUrl}
                       alt="Prévia do prato"
+                      decoding="async"
                       className="w-12 h-12 rounded-lg object-cover bg-neutral-200 shrink-0"
                     />
                     <div className="flex-1 min-w-0">
@@ -5187,7 +4960,7 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
                     </div>
 
                     <div className="space-y-1">
-                      {grp.items.map((item, iIdx) => (
+                      {grp.items.map((item) => (
                         <div key={item.id} className="flex items-center justify-between text-[11px]">
                           <span>• {item.name}</span>
                           <span className="font-mono text-neutral-500 tabular-nums">
@@ -6095,5 +5868,6 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
         }}
       />
     </div>
+    </Suspense>
   );
 };

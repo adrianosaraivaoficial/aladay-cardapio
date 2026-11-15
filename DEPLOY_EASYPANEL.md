@@ -1,83 +1,85 @@
-# Guia de Deploy em Produção: VPS Hostinger + EasyPanel
+# Deploy, staging e recuperação
 
-Este guia documenta todos os passos para colocar a **Plataforma SaaS de Cardápios Digitais & WhatsApp Evolution API** no ar utilizando sua VPS na Hostinger gerenciada pelo **EasyPanel**.
+## Ambiente
 
----
+O `Dockerfile` usa Node 22 Debian slim, build em estágio separado, usuário `node`, encerramento por sinal e healthcheck `/api/v1/ready`. As ferramentas usadas pelo backend (incluindo `tsx` e Vite importado no servidor) são preservadas na imagem. `.env` e arquivos de backup não entram no contexto Docker.
 
-## 1. O que foi preparado e corrigido no código
+No EasyPanel, use Dockerfile, porta interna 3000, volume PostgreSQL persistente e domínio HTTPS. Configure as variáveis de `.env.example` no ambiente do serviço. `DATABASE_URL`, `JWT_SECRET` e `ADMIN_PASSWORD` são obrigatórias. `ADMIN_EMAIL` identifica a conta administrativa; alterar a senha configurada revoga suas sessões ao reiniciar. Compartilhe os mesmos segredos e banco entre réplicas.
 
-1. **Dockerfile Multi-Stage Otimizado (`/Dockerfile`)**:
-   - Criação de imagem Docker leve com `node:22-alpine`.
-   - Etapa 1 compila o frontend Vite (`dist/`).
-   - Etapa 2 instala apenas dependências de produção e inicializa o servidor Node/Express com `tsx`.
-   - Healthcheck integrado em `/api/v1/health`.
-2. **Correção do Script de Inicialização (`package.json`)**:
-   - Atualizado `"start": "tsx server.ts"` e movido `tsx` para `dependencies` (evita falha de execução de TypeScript nativo no Node.js em contêineres de produção).
-3. **Carregamento Dinâmico de Variáveis de Ambiente (`server.ts` & `.env.example`)**:
-   - Integração com `dotenv` logo na primeira linha do servidor.
-   - Leitura de `EVOLUTION_API_URL`, `EVOLUTION_API_KEY`, `ASAAS_API_KEY`, `ASAAS_ENVIRONMENT` e `APP_URL`.
-4. **Arquivo `docker-compose.yml` e `.dockerignore`**:
-   - Pronto para importação direta no EasyPanel.
+Para Compose local:
 
----
+```sh
+cp .env.example .env
+# Edite .env: use segredos aleatórios, POSTGRES_PASSWORD e APP_URL reais do ambiente.
+docker compose up -d --build
+```
 
-## 2. Passo a Passo do Deploy no EasyPanel (Hostinger VPS)
+A aplicação fica em `127.0.0.1:3000`; PostgreSQL não publica porta no host. O proxy deve alcançar essa porta pela rede do host ou ser configurado na mesma rede Docker. Mantenha `PGSSLMODE=disable` somente em rede privada; em conexão externa use TLS com validação de certificado (`verify-full`). A senha em uma URI precisa estar codificada quando contiver caracteres reservados.
 
-### Passo 1: Criar o Projeto no EasyPanel
-1. Acesse o painel do EasyPanel na sua VPS: `http://SEU_IP_VPS:3000` (ou pelo seu subdomínio configurado).
-2. Clique em **"New Project"** e dê o nome: `saas-delivery` (ou o nome que preferir).
+`TRUST_PROXY_HOPS=0` é o padrão seguro para acesso direto. Ajuste para o número exato de proxies confiáveis e impeça acesso direto à aplicação por redes públicas. Não use um número arbitrário: cabeçalhos encaminhados poderiam falsificar o IP de rate limit.
 
-### Passo 2: Adicionar o Serviço da Aplicação
-1. Dentro do projeto, clique em **"+ Service"** e selecione **"App"**.
-2. Nome do serviço: `cardapio-app`.
-3. Na aba **Source** (Origem):
-   - **Opção A (GitHub / Git)**: Conecte seu repositório Git. O EasyPanel detectará automaticamente o `Dockerfile` na raiz.
-   - **Opção B (Docker Compose)**: Se preferir colar o arquivo `docker-compose.yml` pronto.
-4. Na aba **Build**, certifique-se de que está selecionado **Dockerfile**.
+Integrações são opcionais; ausência de configuração resulta em indisponibilidade explícita. `N8N_WEBHOOK_URL` e `N8N_WORKER_TOKEN` habilitam a entrega do outbox ao n8n. O receptor precisa validar o Bearer e deduplicar o ID do evento. `EVOLUTION_API_URL`, `EVOLUTION_API_KEY` e `EVOLUTION_DEFAULT_INSTANCE` habilitam OTP para o telefone já registrado. `GEMINI_API_KEY` e `IFOOD_CLIENT_ID/SECRET` continuam no backend.
 
-### Passo 3: Configurar a Porta e Domínio
-1. Vá na aba **Domains**:
-   - Adicione seu domínio ou subdomínio (ex: `cardapio.seudominio.com.br` ou `app.aladay.com.br`).
-   - Porta interna: digite **`3000`**.
-   - O EasyPanel (Traefik) gerará o certificado **SSL Let's Encrypt (HTTPS)** de forma 100% automática.
+`ASAAS_API_KEY`, `ASAAS_ENVIRONMENT` e `ASAAS_WEBHOOK_TOKEN` pertencem ao mesmo ambiente/conta. Asaas envia `asaas-access-token`; o evento tem `id` único. O servidor reconcilia ID, assinatura, cliente e valor e grava o evento junto à mudança de estado. Consulte a [documentação de webhooks](https://docs.asaas.com/docs/sobre-os-webhooks) e [retries e idempotência](https://docs.asaas.com/docs/retries-e-idempot%C3%AAncia). Criação de assinatura não comprova pagamento; suspensão usa `INACTIVE`, e reativação precisa de `nextDueDate`, conforme [API de assinaturas](https://docs.asaas.com/reference/update-existing-subscription).
 
-### Passo 4: Configurar as Variáveis de Ambiente (Environment)
-Na aba **Environment**, adicione as seguintes chaves:
+`PIX_WEBHOOK_SECRET` autentica o adaptador bancário no header `x-pix-webhook-token`. Não configure o segredo no frontend. O adaptador deve comprovar a liquidação; o BR Code local não possui integração bancária automática.
 
-| Variável | Valor Recomendado | Descrição |
-| :--- | :--- | :--- |
-| `NODE_ENV` | `production` | Ativa entrega estática de `dist/`, HSTS e travas de segurança |
-| `PORT` | `3000` | Porta interna do contêiner |
-| `APP_URL` | `https://aladay.com.br` | URL pública oficial da sua aplicação (usada nos links de WhatsApp e Webhooks) |
-| `DATABASE_URL` | `postgresql://postgres:SENHA@postgres:5432/aladay` | Conexão PostgreSQL no EasyPanel (cria e migra todas as 8 tabelas automaticamente) |
-| `PGSSLMODE` | `disable` (rede interna Docker) ou `require` | Modo SSL do PostgreSQL |
-| `JWT_SECRET` | *(gerar string aleatória de 64 caracteres)* | Segredo criptográfico para assinatura de sessões JWT Multi-Tenant |
-| `ADMIN_EMAIL` | `admin@aladay.com.br` | E-mail do Super Admin da plataforma |
-| `ADMIN_PASSWORD` | *(definir senha forte)* | Senha do Super Admin da plataforma |
-| `PIX_WEBHOOK_SECRET` | *(gerar token secreto)* | Segredo para autenticação de Webhooks Pix |
-| `EVOLUTION_API_URL` | `https://agencia-evolution-api.2eoc7n.easypanel.host` | URL da sua Evolution API |
-| `EVOLUTION_API_KEY` | `SUA_CHAVE_EVOLUTION` | Chave Global (`AUTHENTICATION_API_KEY`) da sua Evolution API |
-| `EVOLUTION_DEFAULT_INSTANCE` | `aladay` | Instância padrão para envio de códigos OTP de 6 dígitos via WhatsApp |
-| `ASAAS_ENVIRONMENT` | `production` | Ambiente do gateway Asaas (`production` para cobranças reais) |
-| `ASAAS_API_KEY` | `$aact_...` | Chave de API de Produção do Asaas |
-| `ASAAS_WEBHOOK_TOKEN` | *(token secreto configurado no Asaas)* | Token de segurança (`asaas-access-token`) para validar webhooks de assinatura |
+Credenciais globais em produção são configuradas pelo deploy, não por gravação no `.env` pelo painel. Atualize o ambiente e reinicie as réplicas. `ASAAS_PIX_KEY/BENEFICIARY/CITY` são configurações legadas; faturas reais usam o payload fornecido pelo gateway.
 
-### Passo 5: Clicar em Deploy
-- Clique no botão **"Deploy"**.
-- Acompanhe os logs de build em tempo real na aba **Logs**.
-- Quando aparecer `[SaaS Server] Running on http://0.0.0.0:3000`, seu app estará no ar com HTTPS ativo!
+## Staging isolado
 
----
+Use Compose com suporte a `!override` (v2.24.4+). Crie `.env.staging` com segredos próprios, banco sem dados pessoais, `APP_URL` de staging, credenciais sandbox e `POSTGRES_PASSWORD` diferente. Nunca monte o volume de produção.
 
-## 3. Checklist Final de Produção (Status Atual)
+```sh
+docker compose --env-file .env.staging -p aladay-staging -f docker-compose.yml -f docker-compose.staging.yml up -d --build
+```
 
-| Item | Status Atual | Detalhes / Ação no EasyPanel |
-| :--- | :---: | :--- |
-| **Build, Docker & Healthcheck** | ✅ Pronto | `Dockerfile` multi-stage (`node:22-alpine`) + `/api/v1/health` |
-| **Banco de Dados PostgreSQL (Auto-Migration)** | ✅ Pronto | Auto-criação e sincronização de `tenants`, `categories`, `products`, `orders`, `subscriber_users`, `asaas_subscriptions`, `pix_transactions` e `outbox_events` ao definir `DATABASE_URL` |
-| **Segurança OWASP & Isolamento Multi-Tenant** | ✅ Pronto | Senhas com `scrypt` + `timingSafeEqual`, Rate Limiting por IP, Headers HSTS/XFO/CSP, bloqueio de simuladores em `NODE_ENV=production` |
-| **Assinaturas Asaas (Anual R$ 99/mês Cartão & Mensal R$ 129,90 + Trial 15 dias)** | ✅ Pronto | Bloqueio automático de inadimplentes/trial expirado + Webhook `/api/v1/asaas/webhook` |
-| **Pix Dinâmico EMV BACEN Direto p/ Lojista (0% Taxa)** | ✅ Pronto | Cada restaurante configura sua Chave Pix e Nome do Beneficiário na aba Pix Direto |
-| **SEO, Schema.org (JSON-LD) & LGPD** | ✅ Pronto | Meta tags OpenGraph, JSON-LD `SoftwareApplication`, Termos de Uso e Política de Privacidade no rodapé |
-| **Variáveis de Ambiente & DNS** | ⏳ Ação no Painel | Preencher variáveis na aba *Environment* do EasyPanel, apontar DNS Tipo `A` para o IP da VPS e cadastrar a URL de Webhook no painel do Asaas |
+O override de staging redefine `env_file` para `.env.staging`. O projeto separado isola rede e volume. Staging usa porta local 3001, `NODE_ENV=production`, `DEPLOY_ENV=staging`, `ASAAS_ENVIRONMENT=sandbox` e `SEO_NOINDEX=true`. Simuladores ficam bloqueados também em staging. Configure webhooks sandbox apontando para o domínio de staging e homologue autenticação, criação, pagamento, estorno e cancelamento com credenciais próprias.
 
+## Migração e rollout
+
+Faça backup e ensaie uma restauração antes de atualizar produção. O schema único é aplicado dentro de uma transação com trava de migração. Não há exclusão automática de restaurantes reservados nem seeds bancários.
+
+Novos índices únicos rejeitam histórico duplicado. Investigue antes do deploy:
+
+```sql
+SELECT tenant_slug,idempotency_key,COUNT(*) FROM orders WHERE idempotency_key IS NOT NULL GROUP BY 1,2 HAVING COUNT(*)>1;
+SELECT order_id,COUNT(*) FROM pix_transactions GROUP BY 1 HAVING COUNT(*)>1;
+SELECT end_to_end_id,COUNT(*) FROM pix_transactions WHERE end_to_end_id IS NOT NULL GROUP BY 1 HAVING COUNT(*)>1;
+```
+
+Não apague duplicidades financeiras automaticamente. Reconcilie e preserve trilha de auditoria. As novas chaves estrangeiras são `NOT VALID`: protegem novas gravações sem remover histórico. Após corrigir os dados antigos, valide cada constraint com `ALTER TABLE ... VALIDATE CONSTRAINT ...` em janela adequada. Não há políticas RLS nesta versão.
+
+IDs de produto/categoria são globalmente únicos no schema existente: importações com IDs de outro restaurante retornam 409 em vez de sobrescrever seus dados. Links antigos de acompanhamento com IDs sequenciais deixam de ser públicos; novos pedidos usam UUID aleatório. Tokens antigos sem sessão persistida deixam de autenticar.
+
+## Backup e restauração
+
+```sh
+docker compose --profile ops run --rm backup
+```
+
+O script cria dump custom, valida seu catálogo, escreve checksum e só então remove backups com mais de `BACKUP_RETENTION_DAYS` (padrão 7). `BACKUP_PATH` define o diretório no host. Restrinja seu acesso: dumps contêm dados pessoais. Programe esse comando no scheduler do host (por exemplo, diariamente às 03h no fuso configurado no host). Copie os arquivos para armazenamento externo criptografado e monitore a idade do último backup; o script local não faz essa cópia.
+
+Teste com um PostgreSQL vazio e descartável, acessível ao cliente PostgreSQL:
+
+```sh
+RESTORE_DATABASE_URL=postgresql://usuario:senha@host:5432/aladay_restore_test sh scripts/restore-check.sh backups/ARQUIVO.dump
+```
+
+O script exige destino explícito, restaura com `--exit-on-error` e consulta tenants, pedidos e outbox. Também confira checksum com `sha256sum -c`. Um catálogo válido de dump sozinho não comprova restauração.
+
+## Observabilidade e worker
+
+- `/api/v1/health`: liveness, sem contagens nem dados de clientes.
+- `/api/v1/ready`: verifica PostgreSQL, retorna 503 se indisponível.
+- `/api/v1/admin/metrics`: Bearer de superadmin, contagens HTTP e fila por estado/idade.
+- Logs JSON: ID de requisição, método, template da rota, status e duração. Não registram corpo, query string ou headers. O proxy também precisa redigir URLs e segredos.
+- Worker embutido ativo por padrão; `OUTBOX_WORKER_ENABLED=false` desliga o processamento nessa réplica. Múltiplas réplicas coordenam com `SKIP LOCKED`. Lease de dois minutos, timeout HTTP de dez segundos, até dez tentativas com backoff.
+- Falhas ficam em `dead`. Após corrigir a causa, superadmin pode chamar `POST /api/v1/admin/outbox/ID/retry`; o evento conserva seu ID. Não reexecute efeitos sem deduplicação no receptor.
+- `billing.reconcile` recupera criações Asaas de resultado ambíguo consultando a referência antes de qualquer nova criação. Nenhum PAN/CVV é persistido em outbox ou ledger. Se a referência não tiver resultado único, trate administrativamente; não apague o bloqueio sem consultar a conta Asaas.
+
+Configure alertas no seu coletor para 5xx, readiness, falhas de pool/worker, eventos `dead`, idade do evento pendente e ausência de backup recente. O Compose limita tamanho/rotação dos logs locais. Alertas e serviços externos não foram provisionados por estes arquivos.
+
+## CI
+
+`.github/workflows/ci.yml` executa instalação limpa, TypeScript, testes unitários, integração com PostgreSQL 17, build Vite e build Docker. Nenhum segredo de produção é necessário. O workflow executa em pushes e pull requests quando GitHub Actions está habilitado no repositório.

@@ -1494,7 +1494,7 @@ export const ProjectKickoffView: React.FC<ProjectKickoffViewProps> = ({
                   <input
                     type="text"
                     required
-                    placeholder="Ex: Av. Paulista, 1000 - Bela Vista, São Paulo - SP"
+                    placeholder="Ex: Rua Exemplo, 100 - Cidade Exemplo"
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
                     className="w-full p-2.5 text-xs border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"

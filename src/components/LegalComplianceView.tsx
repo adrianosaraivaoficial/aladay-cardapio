@@ -5,14 +5,12 @@ import {
   Scale,
   Lock,
   ArrowLeft,
-  CheckCircle2,
   Building2,
   QrCode,
   MessageSquare,
   Database,
   UserCheck,
   Mail,
-  Clock,
   CreditCard,
 } from 'lucide-react';
 
