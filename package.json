@@ -13,6 +13,8 @@
     "test": "node scripts/run-tests.mjs",
     "test:integration": "node scripts/run-tests.mjs --integration",
     "test:e2e": "playwright test",
+    "db:preflight": "node scripts/migrate.mjs",
+    "db:migrate": "node scripts/migrate.mjs --apply",
     "maintenance:intelligence": "tsx scripts/purge-intelligence.ts"
   },
   "dependencies": {

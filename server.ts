@@ -161,7 +161,7 @@ function getInitSqlScript(): string {
     .map(name => fs.readFileSync(path.join(__dirname, 'database', name), 'utf8')).join('\n');
 }
 
-async function initializePostgresConnection(connectionString: string, runMigration = true): Promise<{
+async function initializePostgresConnection(connectionString: string): Promise<{
   success: boolean;
   version?: string;
   counts?: Record<string, number>;
@@ -210,13 +210,21 @@ async function initializePostgresConnection(connectionString: string, runMigrati
     const client = await candidatePool.connect();
     try {
       await client.query('BEGIN');
-      await client.query("SELECT pg_advisory_xact_lock(hashtext('aladay_schema'))");
       const versionRes = await client.query('SELECT version();');
       const serverVersion = versionRes.rows[0]?.version || 'PostgreSQL';
-
-      if (runMigration) {
-        const ddl = getInitSqlScript();
-        await client.query(ddl);
+      const requiredTables = [
+        'tenants', 'categories', 'products', 'orders', 'pix_transactions', 'outbox_events',
+        'subscriber_users', 'auth_sessions', 'auth_otp', 'rate_limits', 'asaas_subscriptions',
+        'billing_operations', 'webhook_events', 'intelligence_settings', 'crm_customers',
+        'menu_import_jobs', 'analytics_events', 'upsell_rules', 'feedback_requests',
+      ];
+      const schema = await client.query(
+        'SELECT table_name FROM information_schema.tables WHERE table_schema=current_schema() AND table_name=ANY($1::text[])',
+        [requiredTables],
+      );
+      const present = new Set(schema.rows.map((row) => row.table_name));
+      const missing = requiredTables.filter((name) => !present.has(name));
+      if (missing.length) throw new Error(`Schema incompleto (${missing.join(', ')}). Execute a migração controlada antes de iniciar a aplicação.`);
 
         // 1. Load saved tenants from PostgreSQL FIRST so real DB records take precedence over default seeds
         const dbTenants = await client.query("SELECT * FROM tenants WHERE LOWER(slug) != 'aladay' ORDER BY created_at ASC;");
@@ -335,8 +343,6 @@ async function initializePostgresConnection(connectionString: string, runMigrati
             memoryOrders.push(mappedOrd);
           }
         });
-      }
-
       const countsRes = await client.query(`
         SELECT
           (SELECT COUNT(*) FROM tenants)::int AS tenants,
@@ -424,7 +430,7 @@ async function startServer() {
   memoryTenants.length = 0;
   memoryCategories.length = 0;
   memoryProducts.length = 0;
-  const database = await initializePostgresConnection(process.env.DATABASE_URL, true);
+  const database = await initializePostgresConnection(process.env.DATABASE_URL);
   if (!database.success || !pgPool) throw new Error(`PostgreSQL indisponível; inicialização cancelada: ${database.error || 'sem detalhes'}`);
   const databasePool = pgPool;
   const JWT_SECRET = process.env.JWT_SECRET;
@@ -914,7 +920,7 @@ async function startServer() {
     });
   });
 
-  app.post('/api/v1/admin/database/test-and-migrate',requireSuperAdmin,(_req,res)=>res.status(410).json({error:'Configure DATABASE_URL no ambiente e reinicie; a migração é aplicada na inicialização.'}));
+  app.post('/api/v1/admin/database/test-and-migrate',requireSuperAdmin,(_req,res)=>res.status(410).json({error:'Execute o preflight e a migração controlada antes de iniciar a aplicação.'}));
 
   async function hydrateTenantCatalogFromDb(slug: string, queryable: pg.Pool | pg.PoolClient = databasePool) {
     if (!pgPool || !slug) return;

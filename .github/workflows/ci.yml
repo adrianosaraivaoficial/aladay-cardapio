@@ -26,6 +26,12 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm test
+      - run: npm run db:preflight
+        env:
+          MIGRATION_DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+      - run: npm run db:migrate -- --confirm-database=aladay_test
+        env:
+          MIGRATION_DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
       - run: npm run test:integration
       - run: npm run build
       - run: npx playwright install --with-deps chromium
