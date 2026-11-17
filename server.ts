@@ -518,7 +518,9 @@ async function startServer() {
 
   function serializeTenantForRequest(req: Request, tenant: InMemTenant) {
     const claims = getAuthenticatedClaims(req);
-    return canAccessTenant(claims, tenant.slug, tenant.id) ? tenant : serializePublicTenant(tenant);
+    return canAccessTenant(claims, tenant.slug, tenant.id) &&
+      ['SUPER_ADMIN', 'TENANT_OWNER'].includes(claims.role)
+      ? tenant : serializePublicTenant(tenant);
   }
 
   function serializePublicTrackingOrder(order: any) {
@@ -1557,7 +1559,7 @@ async function startServer() {
   app.post('/api/v1/pix/simulate-payment', requireSuperAdmin, (_req,res)=>res.status(410).json({error:'Use eventos autenticados em ambiente de teste.'}));
 
   // GET Tenant Pix Config
-  app.get('/api/v1/tenants/:slug/pix-config', requireTenantAccess('slug'), (req: Request, res: Response) => {
+  app.get('/api/v1/tenants/:slug/pix-config', requireTenantAccess('slug'), requireIntelligenceOwner, (req: Request, res: Response) => {
     const tenant = memoryTenants.find((t) => t.slug === req.params.slug);
     if (!tenant) return res.status(404).json({ error: 'Restaurante não encontrado.' });
     res.json({

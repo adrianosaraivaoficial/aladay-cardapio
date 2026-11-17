@@ -30,6 +30,7 @@ const hash = () => {
 };
 let child: ChildProcess;
 let ownerToken = '';
+let otherOwnerToken = '';
 let kitchenToken = '';
 let adminToken = '';
 let orderId = '';
@@ -111,13 +112,14 @@ before(async () => {
       ],
     );
   }
-  for (const [id, email, role] of [
-    ['test-owner', 'owner@example.invalid', 'TENANT_OWNER'],
-    ['test-kitchen', 'kitchen@example.invalid', 'KITCHEN_STAFF'],
+  for (const [id, email, role, suffix] of [
+    ['test-owner', 'owner@example.invalid', 'TENANT_OWNER', 'a'],
+    ['test-owner-b', 'owner-b@example.invalid', 'TENANT_OWNER', 'b'],
+    ['test-kitchen', 'kitchen@example.invalid', 'KITCHEN_STAFF', 'a'],
   ]) {
     await pool.query(
-      `INSERT INTO subscriber_users (id,name,email,password_hash,phone,role,tenant_id,tenant_slug) VALUES ($1,'Teste',$2,$3,'5511988887777',$4,'test-tenant-a','test-a')`,
-      [id, email, hash(), role],
+      `INSERT INTO subscriber_users (id,name,email,password_hash,phone,role,tenant_id,tenant_slug) VALUES ($1,'Teste',$2,$3,'5511988887777',$4,$5,$6)`,
+      [id, email, hash(), role, `test-tenant-${suffix}`, `test-${suffix}`],
     );
   }
   evolution.listen(0, '127.0.0.1');
@@ -166,6 +168,12 @@ before(async () => {
       password,
     })
   ).body.token;
+  otherOwnerToken = (
+    await request('/api/v1/auth/login', {
+      email: 'owner-b@example.invalid',
+      password,
+    })
+  ).body.token;
   kitchenToken = (
     await request('/api/v1/auth/login', {
       email: 'kitchen@example.invalid',
@@ -179,6 +187,7 @@ before(async () => {
     })
   ).body.token;
   assert.ok(ownerToken);
+  assert.ok(otherOwnerToken);
   assert.ok(kitchenToken);
   assert.ok(adminToken);
 });
@@ -240,6 +249,18 @@ test('private routes, tenant scope, kitchen role and public DTOs', async () => {
     'subscriptionStatus',
   ])
     assert.equal(key in catalog.body.data.tenant, false, key);
+  for (const path of ['/api/v1/tenants/test-a', '/api/v1/tenants/test-a/catalog']) {
+    const result = await request(path, undefined, kitchenToken);
+    assert.equal(result.status, 200, path);
+    const tenant = path.endsWith('/catalog') ? result.body.data.tenant : result.body.data;
+    for (const key of ['pixConfig', 'pixKey', 'evolutionInstanceId', 'statusNotificationTemplates'])
+      assert.equal(key in tenant, false, `${path}: ${key}`);
+  }
+  assert.equal((await request('/api/v1/tenants/test-a/pix-config', undefined, kitchenToken)).status, 403);
+  assert.equal((await request('/api/v1/tenants/test-b/pix-config', undefined, ownerToken)).status, 403);
+  assert.equal((await request('/api/v1/tenants/test-a/pix-config', undefined, otherOwnerToken)).status, 403);
+  assert.equal((await request('/api/v1/tenants/test-a/pix-config', undefined, ownerToken)).status, 200);
+  assert.equal((await request('/api/v1/tenants/test-b/pix-config', undefined, otherOwnerToken)).status, 200);
   assert.equal(
     (await request('/api/v1/tenants/test-a/repeat-order?orderId=ord_1042'))
       .status,
@@ -259,6 +280,9 @@ test('concurrent checkout recalculates cents, creates one order and one durable 
   orderId = results[0].body.data.id;
   assert.equal(results[0].body.data.totalCents, 2500);
   assert.equal(results[0].body.data.paymentStatus, 'pending');
+  assert.equal((await request(`/api/v1/orders/${orderId}`, undefined, ownerToken)).status, 200);
+  assert.equal((await request(`/api/v1/orders/${orderId}`, undefined, otherOwnerToken)).status, 404);
+  assert.equal((await request(`/api/v1/orders/${orderId}/status`, { status: 'preparing' }, otherOwnerToken, 'PATCH')).status, 404);
   assert.equal(
     (
       await pool.query(
