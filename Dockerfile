@@ -6,6 +6,8 @@ COPY . .
 RUN npm run lint && npm run build && npm prune --omit=dev --ignore-scripts --no-audit --no-fund
 
 FROM node:22-bookworm-slim AS runtime
+ARG VCS_REF
+LABEL org.opencontainers.image.revision="${VCS_REF}"
 ENV NODE_ENV=production PORT=3000
 WORKDIR /app
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
