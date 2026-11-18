@@ -43,9 +43,12 @@ test.afterAll(async()=>{
 });
 async function enterPanel(page:Page){
   await page.route('**/*',route=>{const url=new URL(route.request().url());return ['127.0.0.1','localhost'].includes(url.hostname)||['blob:','data:'].includes(url.protocol)?route.continue():route.abort();});
-  await page.addInitScript(({auth,restaurant,cache})=>{localStorage.setItem('aladay_auth_session',JSON.stringify(auth));localStorage.setItem('aladay_prod_tenant_v2',JSON.stringify(restaurant));localStorage.setItem('aladay_prod_tenants_list_v2',JSON.stringify([restaurant]));localStorage.setItem('aladay_prod_customers_v2',cache);localStorage.setItem('aladay_cookie_consent_v1','denied');},{auth:session,restaurant:tenant,cache:legacy});
+  await page.addInitScript(({restaurant,cache})=>{localStorage.setItem('aladay_prod_tenant_v2',JSON.stringify(restaurant));localStorage.setItem('aladay_prod_tenants_list_v2',JSON.stringify([restaurant]));localStorage.setItem('aladay_prod_customers_v2',cache);localStorage.setItem('aladay_cookie_consent_v1','denied');},{restaurant:tenant,cache:legacy});
   await page.goto('/');
-  await page.getByRole('button',{name:'Painel & KDS',exact:true}).filter({visible:true}).first().click();
+  const login=await page.evaluate(async({email,password})=>fetch('/api/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})}).then(response=>response.status),{email,password});
+  expect(login).toBe(200);
+  await page.reload();
+  await page.getByRole('button',{name:'Meu painel',exact:true}).filter({visible:true}).first().click();
   await page.getByRole('button',{name:'Inteligência',exact:true}).click();
   await expect(page.getByRole('region',{name:'Inteligência do restaurante'})).toBeVisible();
 }

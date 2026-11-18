@@ -31,16 +31,21 @@ Credenciais globais em produção são configuradas pelo deploy, não por grava�
 
 ## Staging isolado
 
-Use Compose com suporte a `!override` (v2.24.4+). Crie `.env.staging` com segredos próprios, banco sem dados pessoais, `APP_URL` de staging, credenciais sandbox e `POSTGRES_PASSWORD` diferente. Nunca monte o volume de produção.
+O Compose de staging é independente do Compose de produção: usa o projeto `aladay-staging`, rede própria, banco/usuário `aladay_staging` e volume `aladay-staging_staging_postgres_data`. O PostgreSQL não publica porta no host. Gere `.env.staging` com segredos aleatórios exclusivos; o arquivo fica em modo 600 e é ignorado pelo Git. O gerador não sobrescreve credenciais existentes e deixa as integrações externas desativadas. Nunca restaure um dump de produção nesse banco nem monte um volume de produção.
 
 ```sh
-docker compose --env-file .env.staging -p aladay-staging -f docker-compose.yml -f docker-compose.staging.yml up -d db
-docker compose --env-file .env.staging -p aladay-staging -f docker-compose.yml -f docker-compose.staging.yml run --rm migrate node scripts/migrate.mjs
-docker compose --env-file .env.staging -p aladay-staging -f docker-compose.yml -f docker-compose.staging.yml run --rm migrate
-docker compose --env-file .env.staging -p aladay-staging -f docker-compose.yml -f docker-compose.staging.yml up -d --build app
+bash scripts/create-staging-env.sh
+docker compose --env-file .env.staging -f docker-compose.staging.yml up -d db
+docker compose --env-file .env.staging -f docker-compose.staging.yml build app migrate
+docker compose --env-file .env.staging -f docker-compose.staging.yml run --rm migrate node scripts/migrate.mjs
+docker compose --env-file .env.staging -f docker-compose.staging.yml run --rm migrate
+docker compose --env-file .env.staging -f docker-compose.staging.yml up -d app
+curl --fail http://127.0.0.1:3001/api/v1/ready
 ```
 
-O override de staging redefine `env_file` para `.env.staging`. O projeto separado isola rede e volume. Staging usa porta local 3001, `NODE_ENV=production`, `DEPLOY_ENV=staging`, `ASAAS_ENVIRONMENT=sandbox` e `SEO_NOINDEX=true`. Simuladores ficam bloqueados também em staging. Configure webhooks sandbox apontando para o domínio de staging e homologue autenticação, criação, pagamento, estorno e cancelamento com credenciais próprias.
+O staging local usa porta 3001, `NODE_ENV=production`, `DEPLOY_ENV=staging`, `ASAAS_ENVIRONMENT=sandbox` e `SEO_NOINDEX=true`. O `APP_URL` inicial é `http://127.0.0.1:3001`, adequado apenas à verificação local. Para homologação no EasyPanel, crie projeto, PostgreSQL, serviço e domínio HTTPS próprios; configure `APP_URL` com esse domínio e gere novos segredos diretamente no gerenciador de ambiente do painel. Ajuste `TRUST_PROXY_HOPS` conforme o caminho real do proxy. Não copie o arquivo local nem variáveis de produção para o painel. Configure somente webhooks e credenciais sandbox desse projeto quando for testá-los. Simuladores ficam bloqueados em staging.
+
+Em 18/11/2026, o staging local foi criado com banco inicialmente vazio. O preflight passou, as sete migrações foram aplicadas, `/api/v1/health` e `/api/v1/ready` responderam com sucesso. Após o startup havia zero tenants, zero pedidos e apenas a conta administrativa sintética `admin@staging.invalid`. Isso não homologa ainda o domínio HTTPS ou integrações externas do EasyPanel.
 
 ## Migração e rollout
 

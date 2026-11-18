@@ -126,10 +126,10 @@ export const LegalComplianceView: React.FC<LegalComplianceViewProps> = ({
           </div>
           <div>
             <h2 className="text-xs font-bold text-slate-950">
-              Isolamento Multi-Tenant (RLS)
+              Isolamento entre restaurantes
             </h2>
             <p className="text-[11px] text-slate-600 leading-relaxed mt-0.5">
-              Dados de cardápios, clientes e pedidos de cada restaurante são isolados por políticas de segurança em nível de linha (PostgreSQL RLS).
+              O acesso a cardápios, clientes e pedidos é controlado pela sessão e pelo vínculo com cada restaurante nas rotas da aplicação.
             </p>
           </div>
         </div>
@@ -423,7 +423,7 @@ export const LegalComplianceView: React.FC<LegalComplianceViewProps> = ({
                 </p>
                 <ul className="list-disc pl-5 space-y-1.5">
                   <li>
-                    <strong>PostgreSQL Row-Level Security (RLS):</strong> Isolamento lógico estrito por <code>tenant_id</code> em nível de banco de dados, garantindo que um restaurante jamais tenha acesso a pedidos, clientes ou configurações de outro estabelecimento.
+                    <strong>Separação entre restaurantes:</strong> As rotas autenticadas verificam o vínculo da sessão com o restaurante, e as consultas dos recursos principais filtram os registros pelo identificador do restaurante.
                   </li>
                   <li>
                     <strong>Autenticação JWT &amp; Hash Criptográfico:</strong> Senhas de lojistas armazenadas sob hash criptográfico com salt e sessões validadas por tokens assinados no servidor.

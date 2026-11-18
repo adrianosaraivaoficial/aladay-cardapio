@@ -1976,7 +1976,7 @@ async function startServer() {
   ];
 
   // GET notification templates for a tenant
-  app.get('/api/v1/tenants/:slug/notification-templates', requireTenantAccess('slug'), async (req: Request, res: Response) => {
+  app.get('/api/v1/tenants/:slug/notification-templates', requireTenantAccess('slug'), requireIntelligenceOwner, async (req: Request, res: Response) => {
     const result = await databasePool.query('SELECT status_notification_templates FROM tenants WHERE slug=$1',[req.params.slug]);
     const tenant = result.rows[0];
     if (!tenant) {
@@ -5423,7 +5423,7 @@ async function startServer() {
       next();
     } catch(error) {next(error);}
   };
-  app.get('/api/v1/asaas/subscription/:slug', requireTenantAccess('slug'), async (req: Request, res: Response) => {
+  app.get('/api/v1/asaas/subscription/:slug', requireTenantAccess('slug'), requireIntelligenceOwner, async (req: Request, res: Response) => {
     const { slug } = req.params;
     let subscription = memoryAsaasSubscriptions[slug];
 
@@ -5879,7 +5879,7 @@ async function startServer() {
 
   // GET /api/v1/asaas/subscription/:slug/check-status
   // Live polling endpoint to check if payment of R$ 129,90 has been received
-  app.get('/api/v1/asaas/subscription/:slug/check-status', requireTenantAccess('slug'), async (req: Request, res: Response) => {
+  app.get('/api/v1/asaas/subscription/:slug/check-status', requireTenantAccess('slug'), requireIntelligenceOwner, async (req: Request, res: Response) => {
     const { slug } = req.params;
     const subscription = memoryAsaasSubscriptions[slug];
     if (!subscription) {

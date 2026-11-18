@@ -10,6 +10,7 @@ import { AuthSession, RestaurantTenant } from '../types';
 import {
   ConsentStatus, getConsentStatus, initGA4, setConsentStatus, trackConversionEvent,
 } from '../utils/analytics';
+import { SiteBrandV2, SiteFooterV2 } from './SiteChromeV2';
 import './landingV2.css';
 
 interface LandingPageViewProps {
@@ -246,7 +247,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       <a href="#conteudo-aladay" className="v2-skip">Pular para o conteúdo</a>
       <header className="v2-header" id="topo">
         <div className="v2-nav-shell">
-          <a className="v2-logo" href="#topo" aria-label="Aladay, voltar ao início"><span className="v2-logo-mark">A</span><span>ala<span>day</span></span></a>
+          <a className="site-v2-brand-link" href="#topo" aria-label="Aladay, voltar ao início"><SiteBrandV2 /></a>
           <nav className="v2-desktop-nav" aria-label="Navegação principal">
             <a href="#recursos">Recursos</a><a href="#como-funciona">Como funciona</a><a href="#aladay-ai">Aladay AI</a><a href="#planos">Planos</a><a href="#duvidas">Dúvidas</a>
           </nav>
@@ -495,13 +496,18 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       </section>
       </main>
 
-      <footer className="border-t border-white/10 bg-slate-950 px-6 pb-10 text-slate-500 sm:px-10">
-        <div className="mx-auto flex max-w-7xl flex-col justify-between gap-5 border-t border-white/10 pt-8 text-xs sm:flex-row sm:items-center">
-          <div className="flex items-center gap-2 font-bold text-white"><span className="flex h-7 w-7 items-center justify-center bg-blue-600">A</span> Aladay</div>
-          <div className="flex flex-wrap gap-5">{onNavigateToTerms && <button type="button" onClick={onNavigateToTerms} className="hover:text-white">Termos de Uso</button>}{onNavigateToPrivacy && <button type="button" onClick={onNavigateToPrivacy} className="hover:text-white">Política de Privacidade</button>}<button type="button" onClick={openSupportWhatsApp} className="hover:text-white">Atendimento</button></div>
-          <span>© {new Date().getFullYear()} Aladay</span>
-        </div>
-      </footer>
+      <SiteFooterV2
+        onSection={(id) => {
+          window.history.replaceState(null, '', `#${id}`);
+          document.getElementById(id)?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth' });
+        }}
+        onLogin={authSession ? onNavigateToAdmin : onNavigateToLogin}
+        onStartTrial={onNavigateToSetup}
+        onTerms={onNavigateToTerms ?? (() => {})}
+        onPrivacy={onNavigateToPrivacy ?? (() => {})}
+        onSupport={openSupportWhatsApp}
+        isAuthenticated={Boolean(authSession)}
+      />
 
       <AnimatePresence>
         {activeReel && (

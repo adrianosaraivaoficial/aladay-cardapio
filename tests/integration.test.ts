@@ -292,6 +292,36 @@ test('financial settings stay tenant scoped and concurrent template edits merge 
   assert.equal(read.body.data.templates.preparing,'Preparando A');
   assert.equal((await request('/api/v1/tenants/test-b/notification-templates', undefined, otherOwnerToken)).body.data.templates.confirmed,'✅ *Pedido #{numero_pedido} Confirmado!*\n\nOlá, *{cliente_primeiro_nome}*! Seu pedido foi confirmado com sucesso pela equipe do *{restaurante_nome}* e já entrou na nossa fila de produção! 👨‍🍳🔥\n\n📦 *Itens:* {itens_resumo}\n🛵 *Tipo:* {tipo_pedido}\n📍 *Destino:* {endereco_entrega}\n💰 *Total:* {total} ({forma_pagamento})\n⏱️ *Previsão de Entrega:* {previsao_minutos} min\n\n👉 *Acompanhe em tempo real pelo link:*\n{link_rastreamento}');
 });
+test('billing, templates and reports deny kitchen and cross-tenant reads', async () => {
+  for (const path of [
+    '/api/v1/tenants/test-a/pix-config',
+    '/api/v1/tenants/test-a/notification-templates',
+    '/api/v1/tenants/test-a/analytics/export',
+    '/api/v1/asaas/subscription/test-a',
+    '/api/v1/asaas/subscription/test-a/check-status',
+  ]) {
+    assert.equal((await request(path, undefined, kitchenToken)).status, 403, `kitchen: ${path}`);
+    assert.equal((await request(path, undefined, otherOwnerToken)).status, 403, `other owner: ${path}`);
+  }
+  for (const path of [
+    '/api/v1/tenants/test-b/pix-config',
+    '/api/v1/tenants/test-b/notification-templates',
+    '/api/v1/tenants/test-b/analytics/export',
+    '/api/v1/asaas/subscription/test-b',
+    '/api/v1/asaas/subscription/test-b/check-status',
+  ])
+    assert.equal((await request(path, undefined, ownerToken)).status, 403, `owner A: ${path}`);
+  assert.equal((await request('/api/v1/tenants/test-a/notification-templates', undefined, ownerToken)).status, 200);
+  assert.equal((await request('/api/v1/tenants/test-a/notification-templates', undefined, adminToken)).status, 200);
+});
+test('cross-tenant product IDs cannot be edited or deleted through another tenant', async () => {
+  const basePath = '/api/v1/tenants/test-a/products/test-product-b';
+  assert.equal((await request(basePath, { name: 'Alterado', priceCents: 1 }, ownerToken, 'PUT')).status, 404);
+  assert.equal((await request(basePath, undefined, ownerToken, 'DELETE')).status, 404);
+  assert.equal((await request(`${basePath}/toggle-availability`, {}, ownerToken, 'PATCH')).status, 404);
+  const product = (await pool.query('SELECT name,price_cents,is_available FROM products WHERE id=$1', ['test-product-b'])).rows[0];
+  assert.deepEqual(product, { name: 'Produto', price_cents: 1250, is_available: true });
+});
 test('concurrent checkout recalculates cents, creates one order and one durable event', async () => {
   const body = cart();
   const results = await Promise.all(

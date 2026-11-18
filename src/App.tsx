@@ -19,6 +19,7 @@ import {
 } from './types';
 import { LogIn, Lock, ShieldAlert, X, ArrowRight, Menu, Share2, Copy, Check, MessageSquare, ExternalLink } from 'lucide-react';
 import { ViewLoadingFallback } from './components/ViewLoadingFallback';
+import { LANDING_NAV_ITEMS, SiteBrandV2, SiteFooterV2 } from './components/SiteChromeV2';
 import { buildPublicMenuUrl } from './utils/publicMenuUrl';
 import { syncSeoMetadata } from './utils/seoMetadata';
 
@@ -433,9 +434,13 @@ export default function App() {
     resolvePublicStoreSlugFromLocation()
   );
 
-  const [currentView, setCurrentView] = useState<'home' | 'kickoff' | 'consumer' | 'admin' | 'calculator' | 'diagrams' | 'tracking' | 'whatsapp' | 'auth' | 'terms' | 'privacy' | 'feedback'>(() =>
-    feedbackToken !== null ? 'feedback' : resolvePublicStoreSlugFromLocation() ? 'consumer' : 'home'
-  );
+  const [currentView, setCurrentView] = useState<'home' | 'kickoff' | 'consumer' | 'admin' | 'calculator' | 'diagrams' | 'tracking' | 'whatsapp' | 'auth' | 'terms' | 'privacy' | 'feedback'>(() => {
+    if (feedbackToken !== null) return 'feedback';
+    const pathname = window.location.pathname.replace(/\/+$/, '').toLowerCase();
+    if (pathname === '/terms') return 'terms';
+    if (pathname === '/privacy') return 'privacy';
+    return resolvePublicStoreSlugFromLocation() ? 'consumer' : 'home';
+  });
   const [publicCatalogState, setPublicCatalogState] = useState<{slug:string;status:'loading'|'ready'|'error'}>({slug:'',status:'loading'});
   const [selectedTrackingOrder, setSelectedTrackingOrder] = useState<Order | null>(null);
   const [showSubscriptionNoticeModal, setShowSubscriptionNoticeModal] = useState<boolean>(false);
@@ -944,10 +949,17 @@ export default function App() {
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
     const handleUrlChange = () => {
+      const pathname = window.location.pathname.replace(/\/+$/, '').toLowerCase();
+      if (pathname === '/terms' || pathname === '/privacy') {
+        setCurrentView(pathname.slice(1) as 'terms' | 'privacy');
+        return;
+      }
       const detectedSlug = resolvePublicStoreSlugFromLocation();
       if (detectedSlug) {
         setSharedLojaParam(detectedSlug);
         setCurrentView('consumer');
+      } else {
+        setCurrentView((view) => view === 'terms' || view === 'privacy' ? 'home' : view);
       }
     };
     window.addEventListener('popstate', handleUrlChange);
@@ -1108,6 +1120,9 @@ export default function App() {
   ]);
 
   const handleNavigateSafely = (targetView: typeof currentView) => {
+    if (['/terms', '/privacy'].includes(window.location.pathname.replace(/\/+$/, '').toLowerCase())) {
+      window.history.pushState(null, '', '/');
+    }
     // O cardápio digital ('consumer') e rastreio ('tracking') são públicos para os clientes do restaurante
     if (targetView === 'consumer' || targetView === 'tracking') {
       setCurrentView(targetView);
@@ -1130,6 +1145,28 @@ export default function App() {
       return;
     }
     setCurrentView(targetView);
+  };
+
+  const navigateToLegal = (view: 'terms' | 'privacy') => {
+    if (window.location.pathname !== `/${view}`) window.history.pushState(null, '', `/${view}`);
+    setCurrentView(view);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const navigateToLandingSection = (sectionId: string) => {
+    handleNavigateSafely('home');
+    setIsMobileMenuOpen(false);
+    window.history.replaceState(null, '', `#${sectionId}`);
+    let attempts = 0;
+    const scrollWhenReady = () => {
+      const section = document.getElementById(sectionId);
+      if (section) {
+        section.scrollIntoView({ behavior: 'smooth' });
+      } else if (attempts++ < 30) {
+        window.setTimeout(scrollWhenReady, 100);
+      }
+    };
+    window.setTimeout(scrollWhenReady, 0);
   };
 
   // Default fallback normalized catalog memoized once
@@ -1737,8 +1774,8 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
       {/* Universal Top Bar Contract (Ocultado quando o cliente acessa diretamente o link público sem estar logado no painel administrativo) */}
       {showUniversalHeader() && (
-      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-2xs">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-8">
+      <header className="site-v2-header sticky top-0 z-50">
+        <div className="site-v2-header-shell max-w-7xl mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-8">
           {/* Zone 1: Brand Wordmark with Tech Blue emblem */}
           <div className="flex items-center gap-2 min-w-0">
             <button
@@ -1747,12 +1784,9 @@ export default function App() {
                 handleNavigateSafely('home');
                 setIsMobileMenuOpen(false);
               }}
-              className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-slate-950 hover:text-blue-600 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              className="site-v2-brand-link cursor-pointer"
             >
-              <span className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center text-xs font-black shadow-xs shadow-blue-600/25">
-                A
-              </span>
-              <span>Aladay</span>
+              <SiteBrandV2 />
             </button>
 
             {authSession && hasActiveSubscription && isTrialActiveAndValid && (
@@ -1766,7 +1800,7 @@ export default function App() {
           </div>
 
           {/* Zone 2: Desktop Navigation Links */}
-          <nav className="hidden md:flex items-center gap-5 text-xs font-semibold text-slate-600">
+          <nav className="site-v2-header-nav hidden lg:flex items-center gap-5 text-xs font-semibold text-slate-600" aria-label="Navegação principal">
             {isSuperAdmin ? (
               <>
                 <button
@@ -1818,50 +1852,13 @@ export default function App() {
                   Painel &amp; KDS
                 </button>
               </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => handleNavigateSafely('home')}
-                  className={`hover:text-blue-600 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                    currentView === 'home' ? 'text-blue-600 font-bold underline decoration-2 underline-offset-8' : ''
-                  }`}
-                >
-                  Início
-                </button>
-                <a
-                  href="#demonstracao-celular"
-                  onClick={() => {
-                    if (currentView !== 'home') handleNavigateSafely('home');
-                  }}
-                  className="hover:text-blue-600 transition-colors whitespace-nowrap shrink-0"
-                >
-                  Demonstração no Celular
-                </a>
-                <a
-                  href="#planos"
-                  onClick={() => {
-                    if (currentView !== 'home') handleNavigateSafely('home');
-                  }}
-                  className="hover:text-blue-600 transition-colors whitespace-nowrap shrink-0"
-                >
-                  Planos (a partir de R$ 99,00/mês)
-                </a>
-                <a
-                  href="#calculadora"
-                  onClick={() => {
-                    if (currentView !== 'home') handleNavigateSafely('home');
-                  }}
-                  className="hover:text-blue-600 transition-colors whitespace-nowrap shrink-0"
-                >
-                  Calculadora de Economia
-                </a>
-              </>
-            )}
+            ) : LANDING_NAV_ITEMS.map(({ label, id }) => (
+              <a key={id} href={`#${id}`} onClick={(event) => { event.preventDefault(); navigateToLandingSection(id); }} className="whitespace-nowrap shrink-0">{label}</a>
+            ))}
           </nav>
 
           {/* Zone 3: Active Profile Badge & Login / Auth Portal + Mobile Hamburger Button */}
-          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+          <div className="site-v2-header-actions flex items-center gap-1.5 sm:gap-2.5 shrink-0">
             {authSession && hasActiveSubscription ? (
               <>
                 {authSession.user.role === 'SUPER_ADMIN' ? (
@@ -1947,7 +1944,7 @@ export default function App() {
               onClick={() => setIsMobileMenuOpen((prev) => !prev)}
               aria-label="Abrir ou fechar menu de navegação"
               aria-expanded={isMobileMenuOpen}
-              className="md:hidden inline-flex items-center justify-center p-2 rounded-lg text-slate-700 hover:text-blue-600 hover:bg-slate-100 border border-slate-200 transition-colors cursor-pointer"
+              className="lg:hidden inline-flex items-center justify-center p-2 rounded-lg text-slate-700 hover:text-blue-600 hover:bg-slate-100 border border-slate-200 transition-colors cursor-pointer"
             >
               {isMobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
             </button>
@@ -1957,7 +1954,7 @@ export default function App() {
         {/* Always-Visible Mobile Top Navigation Strip (< md) */}
         <nav
           aria-label="Navegação rápida mobile"
-          className="md:hidden border-t border-slate-200 bg-slate-50/90 px-3 py-2 flex items-center gap-1.5 overflow-x-auto"
+          className="site-v2-mobile-strip lg:hidden border-t border-slate-200 bg-slate-50/90 px-3 py-2 flex items-center gap-1.5 overflow-x-auto"
         >
           {isSuperAdmin ? (
             <>
@@ -2035,59 +2032,14 @@ export default function App() {
                 Painel &amp; KDS
               </button>
             </>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={() => {
-                  handleNavigateSafely('home');
-                  setIsMobileMenuOpen(false);
-                }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
-                  currentView === 'home'
-                    ? 'bg-blue-600 text-white shadow-2xs'
-                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                Início
-              </button>
-              <a
-                href="#demonstracao-celular"
-                onClick={() => {
-                  if (currentView !== 'home') handleNavigateSafely('home');
-                  setIsMobileMenuOpen(false);
-                }}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 transition-colors"
-              >
-                Demonstração no Celular
-              </a>
-              <a
-                href="#planos"
-                onClick={() => {
-                  if (currentView !== 'home') handleNavigateSafely('home');
-                  setIsMobileMenuOpen(false);
-                }}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 transition-colors"
-              >
-                Planos (R$ 99/mês Anual)
-              </a>
-              <a
-                href="#calculadora"
-                onClick={() => {
-                  if (currentView !== 'home') handleNavigateSafely('home');
-                  setIsMobileMenuOpen(false);
-                }}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 transition-colors"
-              >
-                Calculadora
-              </a>
-            </>
-          )}
+          ) : LANDING_NAV_ITEMS.map(({ label, id }) => (
+            <a key={id} href={`#${id}`} onClick={(event) => { event.preventDefault(); navigateToLandingSection(id); }} className="px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 transition-colors">{label}</a>
+          ))}
         </nav>
 
         {/* Expandable Mobile Drawer Menu */}
         {isMobileMenuOpen && (
-          <div className="md:hidden border-t border-slate-200 bg-white px-4 py-4 space-y-3 shadow-lg">
+          <div className="site-v2-mobile-drawer lg:hidden border-t border-slate-200 bg-white px-4 py-4 space-y-3 shadow-lg">
             {authSession && hasActiveSubscription && (
               <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
                 <div className="flex items-center gap-2">
@@ -2189,52 +2141,9 @@ export default function App() {
                     Painel &amp; KDS
                   </button>
                 </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleNavigateSafely('home');
-                      setIsMobileMenuOpen(false);
-                    }}
-                    className={`w-full text-left px-3 py-2.5 rounded-lg text-xs font-semibold transition-colors ${
-                      currentView === 'home' ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-slate-100'
-                    }`}
-                  >
-                    Página Inicial
-                  </button>
-                  <a
-                    href="#demonstracao-celular"
-                    onClick={() => {
-                      if (currentView !== 'home') handleNavigateSafely('home');
-                      setIsMobileMenuOpen(false);
-                    }}
-                    className="block w-full text-left px-3 py-2.5 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
-                  >
-                    Demonstração no Celular
-                  </a>
-                  <a
-                    href="#planos"
-                    onClick={() => {
-                      if (currentView !== 'home') handleNavigateSafely('home');
-                      setIsMobileMenuOpen(false);
-                    }}
-                    className="block w-full text-left px-3 py-2.5 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
-                  >
-                    Planos &amp; Preço (R$ 99,00/mês Anual no Cartão ou R$ 129,90/mês)
-                  </a>
-                  <a
-                    href="#calculadora"
-                    onClick={() => {
-                      if (currentView !== 'home') handleNavigateSafely('home');
-                      setIsMobileMenuOpen(false);
-                    }}
-                    className="block w-full text-left px-3 py-2.5 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
-                  >
-                    Calculadora de Economia
-                  </a>
-                </>
-              )}
+              ) : LANDING_NAV_ITEMS.map(({ label, id }) => (
+                <a key={id} href={`#${id}`} onClick={(event) => { event.preventDefault(); navigateToLandingSection(id); }} className="block w-full text-left px-3 py-2.5 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors">{label}</a>
+              ))}
             </div>
           </div>
         )}
@@ -2255,23 +2164,17 @@ export default function App() {
             }}
             onNavigateToDemoMenu={() => handleNavigateSafely('consumer')}
             onNavigateToAdmin={() => handleNavigateSafely('admin')}
-            onNavigateToTerms={() => {
-              setCurrentView('terms');
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
-            onNavigateToPrivacy={() => {
-              setCurrentView('privacy');
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
+            onNavigateToTerms={() => navigateToLegal('terms')}
+            onNavigateToPrivacy={() => navigateToLegal('privacy')}
           />
         )}
 
         {(currentView === 'terms' || currentView === 'privacy') && (
           <LegalComplianceView
             initialTab={currentView === 'privacy' ? 'privacy' : 'terms'}
-            onTabChange={(tab) => setCurrentView(tab)}
+            onTabChange={navigateToLegal}
             onBackToHome={() => {
-              setCurrentView('home');
+              handleNavigateSafely('home');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
           />
@@ -2552,59 +2455,23 @@ export default function App() {
         </div>
       )}
 
-      {/* Clean quiet footer with Terms of Use and Privacy Policy links */}
       {currentView !== 'home' && (
-      <footer className="border-t border-slate-200 bg-white py-5 mt-auto">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-slate-500">
-          <div className="flex flex-wrap items-center justify-center md:justify-start gap-3">
-            <span className="font-bold text-slate-900">Aladay Cardápios Digitais</span>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-center gap-4">
-            <button
-              type="button"
-              onClick={() => {
-                setCurrentView('terms');
-                if (typeof window !== 'undefined') {
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }
-              }}
-              className={`transition-colors cursor-pointer font-medium ${
-                currentView === 'terms'
-                  ? 'text-blue-600 font-bold underline underline-offset-4'
-                  : 'text-slate-600 hover:text-blue-600 hover:underline underline-offset-4'
-              }`}
-            >
-              Termos de Uso
-            </button>
-            <span aria-hidden="true" className="text-slate-300">
-              ·
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                setCurrentView('privacy');
-                if (typeof window !== 'undefined') {
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }
-              }}
-              className={`transition-colors cursor-pointer font-medium ${
-                currentView === 'privacy'
-                  ? 'text-blue-600 font-bold underline underline-offset-4'
-                  : 'text-slate-600 hover:text-blue-600 hover:underline underline-offset-4'
-              }`}
-            >
-              Política de Privacidade (LGPD)
-            </button>
-            <span aria-hidden="true" className="hidden sm:inline text-slate-300">
-              ·
-            </span>
-            <span className="hidden sm:inline text-slate-400">
-              © {new Date().getFullYear()} Aladay
-            </span>
-          </div>
-        </div>
-      </footer>
+        <SiteFooterV2
+          onSection={navigateToLandingSection}
+          onLogin={() => handleNavigateSafely(authSession ? 'admin' : 'auth')}
+          onStartTrial={() => {
+            setKickoffSessionKey(Date.now());
+            handleNavigateSafely('kickoff');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          onTerms={() => navigateToLegal('terms')}
+          onPrivacy={() => navigateToLegal('privacy')}
+          onSupport={() => {
+            const message = encodeURIComponent('Olá! Gostaria de conhecer a Aladay para digitalizar o meu restaurante.');
+            window.open(`https://wa.me/559131976334?text=${message}`, '_blank', 'noopener,noreferrer');
+          }}
+          isAuthenticated={Boolean(authSession)}
+        />
       )}
     </div>
   );
