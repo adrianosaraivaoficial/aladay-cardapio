@@ -50,4 +50,4 @@ Nenhum teste usou banco de produção. Integrações externas reais não foram a
 
 ## Pull Request
 
-Link a registrar após publicação da branch e criação do Draft PR.
+[Draft PR #2 — Auditoria: segurança multi-tenant, sessões e migrações controladas](https://github.com/adrianosaraivaoficial/https-github.com-adrianosaraivaoficial-aladay-cardapio/pull/2). Não fazer merge nem deploy antes da revisão e homologação.
