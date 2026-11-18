@@ -26,6 +26,12 @@
 
 Nenhum teste usou banco de produção. Integrações externas reais não foram acionadas.
 
+## Execução local da landing v2
+
+A tarefa VS Code `Aladay: localhost com banco descartável` executa [run-local-dev.sh](../../scripts/run-local-dev.sh). Ela cria um PostgreSQL 17 temporário em `127.0.0.1:55433`, aplica as migrações controladas somente no banco `aladay_local` e inicia o app em `http://127.0.0.1:32200`. O script gera credenciais temporárias, não carrega integrações externas e remove o container quando a tarefa termina. Ele recusa iniciar se houver `.env` no diretório, para evitar carregar configurações reais.
+
+Em 17/11/2026, `/api/v1/health` retornou `{"status":"ok"}` e `/api/v1/ready` retornou `{"status":"ready"}`. Os dois testes de [landingV2.spec.ts](../../tests/e2e/landingV2.spec.ts) passaram contra esse localhost. O PostgreSQL existente na máquina não foi utilizado. A tarefa local não valida Asaas, Evolution, OTP nem a aparência em dispositivos físicos.
+
 ## Riscos remanescentes e plano
 
 1. Caches de tenant, catálogo, pedidos, conversas, iFood e algumas assinaturas ainda são mutáveis por processo. Continuar a migração por fluxo, com testes de duas réplicas e concorrência, antes de escalar horizontalmente.
