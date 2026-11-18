@@ -19,6 +19,8 @@ test.beforeAll(async()=>{
   pool=new pg.Pool({connectionString});
   await pool.query(fs.readFileSync('database/easypanel-init.sql','utf8'));
   for(const file of fs.readdirSync('database').filter(name=>name.endsWith('.sql')&&name!=='easypanel-init.sql').sort()) await pool.query(fs.readFileSync(`database/${file}`,'utf8'));
+  // This suite reuses only a disposable _test database; prior local runs can exhaust the persistent login limiter.
+  await pool.query('DELETE FROM rate_limits');
   for(const name of [slug,other]) await pool.query("INSERT INTO tenants(id,name,slug,phone,subscription_status,subscription_access_until,tables_count) VALUES($1,$2,$1,$3,'active',NOW()+INTERVAL '90 days',3)",[name,name===slug?tenant.name:'Outro E2E',tenant.phone]);
   const salt=crypto.randomBytes(16).toString('hex'),hash=`scrypt$${salt}$${crypto.scryptSync(password,salt,64).toString('hex')}`;
   await pool.query(`INSERT INTO subscriber_users(id,name,email,password_hash,phone,role,tenant_id,tenant_slug,tenant_name,permissions) VALUES($1,'Owner E2E',$2,$3,$4,'TENANT_OWNER',$5,$5,$6,'["tenant:full_access","kds:manage_orders"]')`,[`owner-${suffix}`,email,hash,tenant.phone,slug,tenant.name]);
@@ -31,23 +33,49 @@ test.beforeAll(async()=>{
   for(let attempt=0;attempt<160;attempt++) {try {if((await fetch(`${origin}/api/v1/ready`)).ok){ready=true;break;}}catch{}if(child.exitCode!==null)break;await new Promise(resolve=>setTimeout(resolve,250));}
   expect(ready,output).toBe(true);
   const response=await fetch(`${origin}/api/v1/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});
-  expect(response.ok).toBe(true);session=await response.json();expect(session.token).toBeTruthy();
+  const ownerPayload=await response.json();expect(response.ok,JSON.stringify({ownerPayload,output})).toBe(true);session=ownerPayload;expect(session.token).toBeTruthy();
   const adminLogin=await fetch(`${origin}/api/v1/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:`admin-${suffix}@example.invalid`,password:'e2e-only-admin-password'})});
-  expect(adminLogin.ok).toBe(true);adminSession=await adminLogin.json();expect(adminSession.user.role).toBe('SUPER_ADMIN');
+  const adminPayload=await adminLogin.json();expect(adminLogin.ok,JSON.stringify(adminPayload)).toBe(true);adminSession=adminPayload;expect(adminSession.user.role).toBe('SUPER_ADMIN');
 });
 test.afterAll(async()=>{
   if(child&&child.exitCode===null){child.kill('SIGTERM');await once(child,'exit');}
-  if(pool){await pool.query('DELETE FROM auth_sessions WHERE user_id=$1 OR id=$2',[`owner-${suffix}`,adminSession?.claims?.jti||'unused']);await pool.query('DELETE FROM subscriber_users WHERE id=$1',[`owner-${suffix}`]);await pool.query('DELETE FROM pix_transactions WHERE tenant_slug=ANY($1::text[])',[[slug,other]]);await pool.query('DELETE FROM orders WHERE tenant_slug=ANY($1::text[])',[[slug,other]]);await pool.query('DELETE FROM products WHERE tenant_slug=ANY($1::text[])',[[slug,other]]);await pool.query('DELETE FROM categories WHERE tenant_slug=ANY($1::text[])',[[slug,other]]);await pool.query('DELETE FROM tenants WHERE slug=ANY($1::text[])',[[slug,other]]);await pool.end();}
+  if(pool){await pool.query('DELETE FROM auth_sessions WHERE user_id=$1 OR id=$2',[`owner-${suffix}`,adminSession?.claims?.jti||'00000000-0000-0000-0000-000000000000']);await pool.query('DELETE FROM subscriber_users WHERE id=$1',[`owner-${suffix}`]);await pool.query('DELETE FROM pix_transactions WHERE tenant_slug=ANY($1::text[])',[[slug,other]]);await pool.query('DELETE FROM orders WHERE tenant_slug=ANY($1::text[])',[[slug,other]]);await pool.query('DELETE FROM products WHERE tenant_slug=ANY($1::text[])',[[slug,other]]);await pool.query('DELETE FROM categories WHERE tenant_slug=ANY($1::text[])',[[slug,other]]);await pool.query('DELETE FROM tenants WHERE slug=ANY($1::text[])',[[slug,other]]);await pool.end();}
 });
 async function enterPanel(page:Page){
   await page.route('**/*',route=>{const url=new URL(route.request().url());return ['127.0.0.1','localhost'].includes(url.hostname)||['blob:','data:'].includes(url.protocol)?route.continue():route.abort();});
-  await page.addInitScript(({auth,restaurant,cache})=>{localStorage.setItem('aladay_auth_session',JSON.stringify(auth));localStorage.setItem('aladay_prod_tenant_v2',JSON.stringify(restaurant));localStorage.setItem('aladay_prod_tenants_list_v2',JSON.stringify([restaurant]));localStorage.setItem('aladay_prod_customers_v2',cache);localStorage.setItem('aladay_cookie_consent_v1','denied');},{auth:session,restaurant:tenant,cache:legacy});
+  await page.addInitScript(({restaurant,cache})=>{localStorage.setItem('aladay_prod_tenant_v2',JSON.stringify(restaurant));localStorage.setItem('aladay_prod_tenants_list_v2',JSON.stringify([restaurant]));localStorage.setItem('aladay_prod_customers_v2',cache);localStorage.setItem('aladay_cookie_consent_v1','denied');},{restaurant:tenant,cache:legacy});
   await page.goto('/');
-  await page.getByRole('button',{name:'Painel & KDS',exact:true}).filter({visible:true}).first().click();
+  const login=await page.evaluate(async({email,password})=>fetch('/api/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})}).then(response=>response.status),{email,password});
+  expect(login).toBe(200);
+  await page.reload();
+  await page.getByRole('button',{name:'Meu painel',exact:true}).filter({visible:true}).first().click();
   await page.getByRole('button',{name:'Inteligência',exact:true}).click();
   await expect(page.getByRole('region',{name:'Inteligência do restaurante'})).toBeVisible();
 }
 async function catalog(){return (await pool.query('SELECT id,name,price_cents FROM products WHERE tenant_slug=$1 ORDER BY id',[slug])).rows;}
+
+test('browser login migrates to HttpOnly cookie and restores the session after reload',async({page})=>{
+  await page.goto('/');
+  const login=await page.evaluate(async({email,password})=>{
+    const response=await fetch('/api/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});
+    return {status:response.status,payload:await response.json()};
+  },{email,password});
+  expect(login.status).toBe(200);
+  expect(login.payload.token).toBe('');
+  expect(login.payload.csrfToken).toBeTruthy();
+  const cookies=await page.context().cookies(origin);
+  expect(cookies.find(cookie=>cookie.name==='aladay_session')).toMatchObject({httpOnly:true,sameSite:'Strict'});
+  expect(await page.evaluate(()=>localStorage.getItem('aladay_auth_session'))).toBeNull();
+  await page.reload();
+  const session=await page.evaluate(async()=>{const response=await fetch('/api/v1/auth/session');return {status:response.status,payload:await response.json()};});
+  expect(session.status).toBe(200);
+  expect(session.payload.token).toBe('');
+  expect(session.payload.user.tenantSlug).toBe(slug);
+  const denied=await page.evaluate(async()=>fetch('/api/v1/auth/logout',{method:'POST',headers:{'X-CSRF-Token':'invalid'}}).then(response=>response.status));
+  expect(denied).toBe(403);
+  const logout=await page.evaluate(async()=>fetch('/api/v1/auth/logout',{method:'POST'}).then(response=>response.status));
+  expect(logout).toBe(200);
+});
 
 test('CSV review requires saved revision and explicit publication confirmation',async({page})=>{
   await enterPanel(page);

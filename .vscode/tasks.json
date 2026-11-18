@@ -1,0 +1,16 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Aladay: localhost com banco descartável",
+			"type": "shell",
+			"command": "bash",
+			"args": [
+				"scripts/run-local-dev.sh"
+			],
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}

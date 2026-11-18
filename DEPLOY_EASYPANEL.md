@@ -6,12 +6,15 @@ O `Dockerfile` usa Node 22 Debian slim, build em estágio separado, usuário `no
 
 No EasyPanel, use Dockerfile, porta interna 3000, volume PostgreSQL persistente e domínio HTTPS. Configure as variáveis de `.env.example` no ambiente do serviço. `DATABASE_URL`, `JWT_SECRET` e `ADMIN_PASSWORD` são obrigatórias. `ADMIN_EMAIL` identifica a conta administrativa; alterar a senha configurada revoga suas sessões ao reiniciar. Compartilhe os mesmos segredos e banco entre réplicas.
 
-Para Compose local:
+Para Compose local com banco novo, execute o migrador separado antes da aplicação:
 
 ```sh
 cp .env.example .env
 # Edite .env: use segredos aleatórios, POSTGRES_PASSWORD e APP_URL reais do ambiente.
-docker compose up -d --build
+docker compose up -d db
+docker compose run --rm migrate node scripts/migrate.mjs
+docker compose run --rm migrate
+docker compose up -d --build app
 ```
 
 A aplicação fica em `127.0.0.1:3000`; PostgreSQL não publica porta no host. O proxy deve alcançar essa porta pela rede do host ou ser configurado na mesma rede Docker. Mantenha `PGSSLMODE=disable` somente em rede privada; em conexão externa use TLS com validação de certificado (`verify-full`). A senha em uma URI precisa estar codificada quando contiver caracteres reservados.
@@ -28,17 +31,25 @@ Credenciais globais em produção são configuradas pelo deploy, não por grava�
 
 ## Staging isolado
 
-Use Compose com suporte a `!override` (v2.24.4+). Crie `.env.staging` com segredos próprios, banco sem dados pessoais, `APP_URL` de staging, credenciais sandbox e `POSTGRES_PASSWORD` diferente. Nunca monte o volume de produção.
+O Compose de staging é independente do Compose de produção: usa o projeto `aladay-staging`, rede própria, banco/usuário `aladay_staging` e volume `aladay-staging_staging_postgres_data`. O PostgreSQL não publica porta no host. Gere `.env.staging` com segredos aleatórios exclusivos; o arquivo fica em modo 600 e é ignorado pelo Git. O gerador não sobrescreve credenciais existentes e deixa as integrações externas desativadas. Nunca restaure um dump de produção nesse banco nem monte um volume de produção.
 
 ```sh
-docker compose --env-file .env.staging -p aladay-staging -f docker-compose.yml -f docker-compose.staging.yml up -d --build
+bash scripts/create-staging-env.sh
+docker compose --env-file .env.staging -f docker-compose.staging.yml up -d db
+docker compose --env-file .env.staging -f docker-compose.staging.yml build app migrate
+docker compose --env-file .env.staging -f docker-compose.staging.yml run --rm migrate node scripts/migrate.mjs
+docker compose --env-file .env.staging -f docker-compose.staging.yml run --rm migrate
+docker compose --env-file .env.staging -f docker-compose.staging.yml up -d app
+curl --fail http://127.0.0.1:3001/api/v1/ready
 ```
 
-O override de staging redefine `env_file` para `.env.staging`. O projeto separado isola rede e volume. Staging usa porta local 3001, `NODE_ENV=production`, `DEPLOY_ENV=staging`, `ASAAS_ENVIRONMENT=sandbox` e `SEO_NOINDEX=true`. Simuladores ficam bloqueados também em staging. Configure webhooks sandbox apontando para o domínio de staging e homologue autenticação, criação, pagamento, estorno e cancelamento com credenciais próprias.
+O staging local usa porta 3001, `NODE_ENV=production`, `DEPLOY_ENV=staging`, `ASAAS_ENVIRONMENT=sandbox` e `SEO_NOINDEX=true`. O `APP_URL` inicial é `http://127.0.0.1:3001`, adequado apenas à verificação local. Para homologação no EasyPanel, crie projeto, PostgreSQL, serviço e domínio HTTPS próprios; configure `APP_URL` com esse domínio e gere novos segredos diretamente no gerenciador de ambiente do painel. Ajuste `TRUST_PROXY_HOPS` conforme o caminho real do proxy. Não copie o arquivo local nem variáveis de produção para o painel. Configure somente webhooks e credenciais sandbox desse projeto quando for testá-los. Simuladores ficam bloqueados em staging.
+
+Em 18/11/2026, o staging local foi criado com banco inicialmente vazio. O preflight passou, as sete migrações foram aplicadas, `/api/v1/health` e `/api/v1/ready` responderam com sucesso. Após o startup havia zero tenants, zero pedidos e apenas a conta administrativa sintética `admin@staging.invalid`. Isso não homologa ainda o domínio HTTPS ou integrações externas do EasyPanel.
 
 ## Migração e rollout
 
-Faça backup e ensaie uma restauração antes de atualizar produção. O schema único é aplicado dentro de uma transação com trava de migração. Não há exclusão automática de restaurantes reservados nem seeds bancários.
+Faça backup e ensaie uma restauração antes de atualizar um ambiente persistente. O servidor não executa DDL no startup. Rode preflight com `MIGRATION_DATABASE_URL` separado de `DATABASE_URL` e confira o nome do banco. Somente depois, execute `npm run db:migrate -- --confirm-database=<nome exato>`. O script exige confirmação literal, usa transação, advisory lock e ledger de checksums. No Compose, `docker compose run --rm migrate node scripts/migrate.mjs` é o preflight e `docker compose run --rm migrate` aplica a migração. Em EasyPanel, execute em job isolado com as mesmas variáveis do banco, antes de atualizar o serviço da aplicação. **Esta auditoria não executou migração no banco de produção.**
 
 Novos índices únicos rejeitam histórico duplicado. Investigue antes do deploy:
 
@@ -46,9 +57,11 @@ Novos índices únicos rejeitam histórico duplicado. Investigue antes do deploy
 SELECT tenant_slug,idempotency_key,COUNT(*) FROM orders WHERE idempotency_key IS NOT NULL GROUP BY 1,2 HAVING COUNT(*)>1;
 SELECT order_id,COUNT(*) FROM pix_transactions GROUP BY 1 HAVING COUNT(*)>1;
 SELECT end_to_end_id,COUNT(*) FROM pix_transactions WHERE end_to_end_id IS NOT NULL GROUP BY 1 HAVING COUNT(*)>1;
+SELECT slug,COUNT(*) FROM tenants GROUP BY 1 HAVING COUNT(*)>1;
+SELECT email,COUNT(*) FROM subscriber_users GROUP BY 1 HAVING COUNT(*)>1;
 ```
 
-Não apague duplicidades financeiras automaticamente. Reconcilie e preserve trilha de auditoria. As novas chaves estrangeiras são `NOT VALID`: protegem novas gravações sem remover histórico. Após corrigir os dados antigos, valide cada constraint com `ALTER TABLE ... VALIDATE CONSTRAINT ...` em janela adequada. Não há políticas RLS nesta versão.
+Não apague duplicidades financeiras automaticamente. Reconcilie e preserve trilha de auditoria. Se o migrador falhar, a transação faz rollback; corrija a causa e repita o preflight. Se a aplicação nova ficar incompatível, volte à imagem anterior e execute restauração apenas segundo o plano operacional aprovado. As novas chaves estrangeiras são `NOT VALID`: protegem novas gravações sem remover histórico. Após corrigir os dados antigos, valide cada constraint com `ALTER TABLE ... VALIDATE CONSTRAINT ...` em janela adequada. Não há políticas RLS nesta versão.
 
 IDs de produto/categoria são globalmente únicos no schema existente: importações com IDs de outro restaurante retornam 409 em vez de sobrescrever seus dados. Links antigos de acompanhamento com IDs sequenciais deixam de ser públicos; novos pedidos usam UUID aleatório. Tokens antigos sem sessão persistida deixam de autenticar.
 

@@ -1,12 +1,66 @@
-# Run with a separate project and env file to isolate database, network and secrets.
+name: aladay-staging
+
+# Projeto independente: nunca referencia serviços ou volumes do Compose de produção.
 services:
-  app:
-    env_file: !override
-      - .env.staging
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
     environment:
+      POSTGRES_USER: aladay_staging
+      POSTGRES_DB: aladay_staging
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env.staging}
+    volumes:
+      - staging_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U aladay_staging -d aladay_staging']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: json-file
+      options: {max-size: '10m', max-file: '3'}
+
+  app:
+    build: .
+    init: true
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:3001:3000'
+    env_file: .env.staging
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://aladay_staging:${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env.staging}@db:5432/aladay_staging
       DEPLOY_ENV: staging
       ASAAS_ENVIRONMENT: sandbox
-      TRUST_PROXY_HOPS: 0
       SEO_NOINDEX: 'true'
-    ports: !override
-      - '127.0.0.1:3001:3000'
+    depends_on:
+      db:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options: {max-size: '10m', max-file: '3'}
+
+  migrate:
+    build: .
+    profiles: [ops]
+    env_file: .env.staging
+    environment:
+      MIGRATION_DATABASE_URL: postgresql://aladay_staging:${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env.staging}@db:5432/aladay_staging
+    command: ['node', 'scripts/migrate.mjs', '--apply', '--confirm-database=aladay_staging']
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  staging_postgres_data:

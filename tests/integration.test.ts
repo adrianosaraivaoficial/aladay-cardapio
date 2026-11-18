@@ -30,6 +30,7 @@ const hash = () => {
 };
 let child: ChildProcess;
 let ownerToken = '';
+let otherOwnerToken = '';
 let kitchenToken = '';
 let adminToken = '';
 let orderId = '';
@@ -111,13 +112,14 @@ before(async () => {
       ],
     );
   }
-  for (const [id, email, role] of [
-    ['test-owner', 'owner@example.invalid', 'TENANT_OWNER'],
-    ['test-kitchen', 'kitchen@example.invalid', 'KITCHEN_STAFF'],
+  for (const [id, email, role, suffix] of [
+    ['test-owner', 'owner@example.invalid', 'TENANT_OWNER', 'a'],
+    ['test-owner-b', 'owner-b@example.invalid', 'TENANT_OWNER', 'b'],
+    ['test-kitchen', 'kitchen@example.invalid', 'KITCHEN_STAFF', 'a'],
   ]) {
     await pool.query(
-      `INSERT INTO subscriber_users (id,name,email,password_hash,phone,role,tenant_id,tenant_slug) VALUES ($1,'Teste',$2,$3,'5511988887777',$4,'test-tenant-a','test-a')`,
-      [id, email, hash(), role],
+      `INSERT INTO subscriber_users (id,name,email,password_hash,phone,role,tenant_id,tenant_slug) VALUES ($1,'Teste',$2,$3,'5511988887777',$4,$5,$6)`,
+      [id, email, hash(), role, `test-tenant-${suffix}`, `test-${suffix}`],
     );
   }
   evolution.listen(0, '127.0.0.1');
@@ -166,6 +168,12 @@ before(async () => {
       password,
     })
   ).body.token;
+  otherOwnerToken = (
+    await request('/api/v1/auth/login', {
+      email: 'owner-b@example.invalid',
+      password,
+    })
+  ).body.token;
   kitchenToken = (
     await request('/api/v1/auth/login', {
       email: 'kitchen@example.invalid',
@@ -179,6 +187,7 @@ before(async () => {
     })
   ).body.token;
   assert.ok(ownerToken);
+  assert.ok(otherOwnerToken);
   assert.ok(kitchenToken);
   assert.ok(adminToken);
 });
@@ -240,11 +249,78 @@ test('private routes, tenant scope, kitchen role and public DTOs', async () => {
     'subscriptionStatus',
   ])
     assert.equal(key in catalog.body.data.tenant, false, key);
+  for (const path of ['/api/v1/tenants/test-a', '/api/v1/tenants/test-a/catalog']) {
+    const result = await request(path, undefined, kitchenToken);
+    assert.equal(result.status, 200, path);
+    const tenant = path.endsWith('/catalog') ? result.body.data.tenant : result.body.data;
+    for (const key of ['pixConfig', 'pixKey', 'evolutionInstanceId', 'statusNotificationTemplates'])
+      assert.equal(key in tenant, false, `${path}: ${key}`);
+  }
+  assert.equal((await request('/api/v1/tenants/test-a/pix-config', undefined, kitchenToken)).status, 403);
+  assert.equal((await request('/api/v1/tenants/test-b/pix-config', undefined, ownerToken)).status, 403);
+  assert.equal((await request('/api/v1/tenants/test-a/pix-config', undefined, otherOwnerToken)).status, 403);
+  assert.equal((await request('/api/v1/tenants/test-a/pix-config', undefined, ownerToken)).status, 200);
+  assert.equal((await request('/api/v1/tenants/test-b/pix-config', undefined, otherOwnerToken)).status, 200);
   assert.equal(
     (await request('/api/v1/tenants/test-a/repeat-order?orderId=ord_1042'))
       .status,
     403,
   );
+});
+test('financial settings stay tenant scoped and concurrent template edits merge in PostgreSQL', async () => {
+  const pixPath = '/api/v1/tenants/test-a/pix-config';
+  assert.equal((await request(pixPath, { pixKey:'wrong@example.invalid',pixKeyType:'email' }, kitchenToken, 'PUT')).status, 403);
+  assert.equal((await request(pixPath, { pixKey:'wrong@example.invalid',pixKeyType:'email' }, otherOwnerToken, 'PUT')).status, 403);
+  const saved = await request(pixPath, {provider:'direct_bank',pixKey:'owner-a@example.invalid',pixKeyType:'email',beneficiaryName:'Owner A'}, ownerToken, 'PUT');
+  assert.equal(saved.status, 200);
+  assert.equal((await request(pixPath, undefined, ownerToken)).body.data.pixKey, 'owner-a@example.invalid');
+  assert.equal((await pool.query('SELECT pix_config FROM tenants WHERE slug=$1',['test-a'])).rows[0].pix_config.pixKey, 'owner-a@example.invalid');
+  assert.equal((await request('/api/v1/tenants/test-b/pix-config', undefined, otherOwnerToken)).body.data.pixKey, 'test@example.invalid');
+
+  const templatePath = '/api/v1/tenants/test-a/notification-templates';
+  assert.equal((await request(templatePath, {templates:{confirmed:'cross-tenant'}}, otherOwnerToken, 'PUT')).status, 403);
+  const updates = await Promise.all([
+    request(templatePath, {templates:{confirmed:'Confirmado A'}}, ownerToken, 'PUT'),
+    request(templatePath, {templates:{preparing:'Preparando A'}}, ownerToken, 'PUT'),
+  ]);
+  assert.deepEqual(updates.map(result=>result.status),[200,200]);
+  const dbTemplates = (await pool.query('SELECT status_notification_templates FROM tenants WHERE slug=$1',['test-a'])).rows[0].status_notification_templates;
+  assert.equal(dbTemplates.confirmed,'Confirmado A');
+  assert.equal(dbTemplates.preparing,'Preparando A');
+  const read = await request(templatePath, undefined, ownerToken);
+  assert.equal(read.body.data.templates.confirmed,'Confirmado A');
+  assert.equal(read.body.data.templates.preparing,'Preparando A');
+  assert.equal((await request('/api/v1/tenants/test-b/notification-templates', undefined, otherOwnerToken)).body.data.templates.confirmed,'✅ *Pedido #{numero_pedido} Confirmado!*\n\nOlá, *{cliente_primeiro_nome}*! Seu pedido foi confirmado com sucesso pela equipe do *{restaurante_nome}* e já entrou na nossa fila de produção! 👨‍🍳🔥\n\n📦 *Itens:* {itens_resumo}\n🛵 *Tipo:* {tipo_pedido}\n📍 *Destino:* {endereco_entrega}\n💰 *Total:* {total} ({forma_pagamento})\n⏱️ *Previsão de Entrega:* {previsao_minutos} min\n\n👉 *Acompanhe em tempo real pelo link:*\n{link_rastreamento}');
+});
+test('billing, templates and reports deny kitchen and cross-tenant reads', async () => {
+  for (const path of [
+    '/api/v1/tenants/test-a/pix-config',
+    '/api/v1/tenants/test-a/notification-templates',
+    '/api/v1/tenants/test-a/analytics/export',
+    '/api/v1/asaas/subscription/test-a',
+    '/api/v1/asaas/subscription/test-a/check-status',
+  ]) {
+    assert.equal((await request(path, undefined, kitchenToken)).status, 403, `kitchen: ${path}`);
+    assert.equal((await request(path, undefined, otherOwnerToken)).status, 403, `other owner: ${path}`);
+  }
+  for (const path of [
+    '/api/v1/tenants/test-b/pix-config',
+    '/api/v1/tenants/test-b/notification-templates',
+    '/api/v1/tenants/test-b/analytics/export',
+    '/api/v1/asaas/subscription/test-b',
+    '/api/v1/asaas/subscription/test-b/check-status',
+  ])
+    assert.equal((await request(path, undefined, ownerToken)).status, 403, `owner A: ${path}`);
+  assert.equal((await request('/api/v1/tenants/test-a/notification-templates', undefined, ownerToken)).status, 200);
+  assert.equal((await request('/api/v1/tenants/test-a/notification-templates', undefined, adminToken)).status, 200);
+});
+test('cross-tenant product IDs cannot be edited or deleted through another tenant', async () => {
+  const basePath = '/api/v1/tenants/test-a/products/test-product-b';
+  assert.equal((await request(basePath, { name: 'Alterado', priceCents: 1 }, ownerToken, 'PUT')).status, 404);
+  assert.equal((await request(basePath, undefined, ownerToken, 'DELETE')).status, 404);
+  assert.equal((await request(`${basePath}/toggle-availability`, {}, ownerToken, 'PATCH')).status, 404);
+  const product = (await pool.query('SELECT name,price_cents,is_available FROM products WHERE id=$1', ['test-product-b'])).rows[0];
+  assert.deepEqual(product, { name: 'Produto', price_cents: 1250, is_available: true });
 });
 test('concurrent checkout recalculates cents, creates one order and one durable event', async () => {
   const body = cart();
@@ -259,6 +335,9 @@ test('concurrent checkout recalculates cents, creates one order and one durable 
   orderId = results[0].body.data.id;
   assert.equal(results[0].body.data.totalCents, 2500);
   assert.equal(results[0].body.data.paymentStatus, 'pending');
+  assert.equal((await request(`/api/v1/orders/${orderId}`, undefined, ownerToken)).status, 200);
+  assert.equal((await request(`/api/v1/orders/${orderId}`, undefined, otherOwnerToken)).status, 404);
+  assert.equal((await request(`/api/v1/orders/${orderId}/status`, { status: 'preparing' }, otherOwnerToken, 'PATCH')).status, 404);
   assert.equal(
     (
       await pool.query(
@@ -446,6 +525,49 @@ test('sessions do not extend expiry and logout revokes a signed token', async ()
     (await request('/api/v1/auth/session', undefined, ownerToken)).status,
     401,
   );
+});
+test('browser cookie sessions enforce origin and CSRF while Bearer clients remain compatible', async () => {
+  const legacyLogin = await fetch(`${base}/api/v1/auth/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'owner-b@example.invalid', password }),
+  });
+  assert.equal(legacyLogin.status, 200);
+  const legacyToken = (await legacyLogin.json()).token;
+  const exchanged = await fetch(`${base}/api/v1/auth/session`, { headers: {
+    Authorization: `Bearer ${legacyToken}`, 'X-Aladay-Session-Mode': 'cookie', 'Sec-Fetch-Site': 'same-origin',
+  } });
+  assert.equal(exchanged.status, 200);
+  assert.equal((await exchanged.json()).token, '');
+  assert.match(exchanged.headers.get('set-cookie') || '', /HttpOnly/i);
+  const login = await fetch(`${base}/api/v1/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: base, 'X-Aladay-Session-Mode': 'cookie' },
+    body: JSON.stringify({ email: 'owner-b@example.invalid', password }),
+  });
+  assert.equal(login.status, 200);
+  const cookie = login.headers.get('set-cookie') || '';
+  assert.match(cookie, /HttpOnly/i);
+  assert.match(cookie, /SameSite=Strict/i);
+  const sessionCookie = cookie.split(';')[0];
+  const payload = await login.json();
+  assert.equal(payload.token, '');
+  assert.ok(payload.csrfToken);
+  const session = await fetch(`${base}/api/v1/auth/session`, { headers: { Cookie: sessionCookie } });
+  assert.equal(session.status, 200);
+  assert.equal((await session.json()).token, '');
+  const mutation = (origin: string, csrf?: string) => fetch(`${base}/api/v1/auth/logout`, {
+    method: 'POST',
+    headers: { Cookie: sessionCookie, Origin: origin, ...(csrf ? { 'X-CSRF-Token': csrf } : {}) },
+  });
+  assert.equal((await mutation(base)).status, 403);
+  assert.equal((await mutation('https://attacker.example.invalid', payload.csrfToken)).status, 403);
+  assert.equal((await mutation(base, 'wrong')).status, 403);
+  const crossTenant = await fetch(`${base}/api/v1/tenants/test-a/pix-config`, { headers: { Cookie: sessionCookie } });
+  assert.equal(crossTenant.status, 403);
+  const logout = await mutation(base, payload.csrfToken);
+  assert.equal(logout.status, 200);
+  assert.match(logout.headers.get('set-cookie') || '', /Max-Age=0/);
+  assert.equal((await fetch(`${base}/api/v1/auth/session`, { headers: { Cookie: sessionCookie } })).status, 401);
 });
 test('worker retries durably and concurrent workers claim separate events', async () => {
   await pool.query("UPDATE outbox_events SET status='completed'");
