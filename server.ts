@@ -434,6 +434,47 @@ async function startServer() {
   if (!database.success || !pgPool) throw new Error(`PostgreSQL indisponível; inicialização cancelada: ${database.error || 'sem detalhes'}`);
   const databasePool = pgPool;
   const JWT_SECRET = process.env.JWT_SECRET;
+  const SESSION_COOKIE = 'aladay_session';
+
+  function authToken(req: Request): { token: string; source: 'bearer' | 'cookie' } | null {
+    const authorization = req.headers.authorization;
+    if (authorization) {
+      const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+      return token ? { token, source: 'bearer' } : null;
+    }
+    const cookie = req.headers.cookie?.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${SESSION_COOKIE}=`));
+    const token = cookie?.slice(SESSION_COOKIE.length + 1);
+    return token ? { token, source: 'cookie' } : null;
+  }
+
+  function sameOrigin(req: Request): boolean {
+    const origin = req.get('origin');
+    if (!origin) return false;
+    try {
+      return origin === new URL(process.env.APP_URL || `${req.protocol}://${req.get('host')}`).origin;
+    } catch { return false; }
+  }
+
+  function csrfToken(jti: string): string {
+    return crypto.createHmac('sha256', JWT_SECRET).update(`csrf:${jti}`).digest('base64url');
+  }
+
+  function setSessionCookie(req: Request, res: Response, token: string) {
+    const secure = process.env.NODE_ENV === 'production' || req.secure;
+    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${token}; Path=/; Max-Age=43200; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`);
+  }
+
+  function clearSessionCookie(req: Request, res: Response) {
+    const secure = process.env.NODE_ENV === 'production' || req.secure;
+    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`);
+  }
+
+  function cookieMode(req: Request): boolean {
+    // Browsers omit Origin on same-origin GET requests. Fetch Metadata still
+    // identifies the page that is exchanging a legacy Bearer token for a cookie.
+    return req.get('x-aladay-session-mode') === 'cookie'
+      && (sameOrigin(req) || (req.method === 'GET' && req.get('sec-fetch-site') === 'same-origin'));
+  }
 
   function base64UrlEncode(input: string | Buffer): string {
     return Buffer.from(input)
@@ -479,9 +520,9 @@ async function startServer() {
   }
 
   function getAuthenticatedClaims(req: Request): any | null {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    return token ? verifyJwtToken(token) : null;
+    const current = authToken(req);
+    if (current?.source === 'cookie' && !(req as any).cookieSessionValidated) return null;
+    return current ? verifyJwtToken(current.token) : null;
   }
 
   function canAccessTenant(claims: any, tenantSlug: string, tenantId?: string): boolean {
@@ -563,12 +604,11 @@ async function startServer() {
   }
 
   const authenticateToken = (req: Request, res: Response, next: express.NextFunction) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    if (!token) {
-      return res.status(401).json({ error: 'Acesso não autorizado: token JWT ausente.' });
+    const current = authToken(req);
+    if (!current) {
+      return res.status(401).json({ error: 'Acesso não autorizado: sessão ausente.' });
     }
-    const claims = verifyJwtToken(token);
+    const claims = getAuthenticatedClaims(req);
     if (!claims) {
       return res.status(401).json({ error: 'Token JWT inválido ou expirado.' });
     }
@@ -630,25 +670,37 @@ async function startServer() {
   app.use('/api/v1', async (req, res, next) => {
     try {
       if(req.originalUrl.split('?')[0]==='/api/v1/health') return next();
-      const auth = req.headers.authorization;
-      if (auth) {
-        const claims = getAuthenticatedClaims(req);
-        if (!claims) return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
+      const pathname = req.originalUrl.split('?')[0].replace(/\/$/, '');
+      const publicRoute = isPublicRoute(req.method, pathname);
+      const current = authToken(req);
+      if (req.headers.authorization && !current) return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
+      if (current) {
+        const claims = verifyJwtToken(current.token);
+        if (!claims) {
+          if (publicRoute && current.source === 'cookie') { clearSessionCookie(req, res); return next(); }
+          return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
+        }
         const session = await databasePool.query(
           `SELECT u.* FROM auth_sessions s JOIN subscriber_users u ON u.id = s.user_id
            WHERE s.id = $1 AND s.user_id = $2 AND s.revoked_at IS NULL AND s.expires_at > NOW()
            AND s.credential_hash = u.password_hash`, [claims.jti, claims.sub]);
         const user = session.rows[0];
         if (!user || user.role !== claims.role || user.tenant_slug !== claims.tenant_slug || user.tenant_id !== claims.tenant_id) {
+          if (publicRoute && current.source === 'cookie') { clearSessionCookie(req, res); return next(); }
           return res.status(401).json({ error: 'Sessão revogada. Entre novamente.' });
         }
+        if (current.source === 'cookie') (req as any).cookieSessionValidated = true;
       }
       // A failed database never enables memory-only writes or stale public reads.
       await databasePool.query('SELECT 1');
-      const pathname = req.originalUrl.split('?')[0].replace(/\/$/, '');
-      if (isPublicRoute(req.method, pathname)) {
+      if (publicRoute) {
         if ((req.method==='POST' || pathname.endsWith('/upsell/suggestions')) && !pathname.includes('webhook') && !await authRateLimit(`public:${pathname}:${getClientIp(req)}`,60,60)) return res.status(429).json({error:'Limite de solicitações excedido.'});
         return next();
+      }
+      if (current?.source === 'cookie' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+        const supplied = req.get('x-csrf-token') || '';
+        if (!sameOrigin(req) || !safeSecretEquals(supplied, csrfToken(getAuthenticatedClaims(req).jti)))
+          return res.status(403).json({ error: 'Proteção CSRF: origem ou token inválido.' });
       }
       const scoped = pathname.match(/^\/api\/v1\/(?:tenants|asaas\/subscription)\/([^/]+)/);
       const claims = getAuthenticatedClaims(req);
@@ -1565,16 +1617,17 @@ async function startServer() {
   app.post('/api/v1/pix/simulate-payment', requireSuperAdmin, (_req,res)=>res.status(410).json({error:'Use eventos autenticados em ambiente de teste.'}));
 
   // GET Tenant Pix Config
-  app.get('/api/v1/tenants/:slug/pix-config', requireTenantAccess('slug'), requireIntelligenceOwner, (req: Request, res: Response) => {
-    const tenant = memoryTenants.find((t) => t.slug === req.params.slug);
+  app.get('/api/v1/tenants/:slug/pix-config', requireTenantAccess('slug'), requireIntelligenceOwner, async (req: Request, res: Response) => {
+    const result = await databasePool.query('SELECT name,phone,pix_config FROM tenants WHERE slug=$1', [req.params.slug]);
+    const tenant = result.rows[0];
     if (!tenant) return res.status(404).json({ error: 'Restaurante não encontrado.' });
     res.json({
-      data: tenant.pixConfig || {
+      data: tenant.pix_config || {
         provider: 'direct_bank',
-        pixKey: tenant.pixKey || tenant.phone || '5511987654321',
+        pixKey: tenant.phone || '5511987654321',
         pixKeyType: 'phone',
-        beneficiaryName: tenant.pixBeneficiaryName || tenant.name,
-        merchantName: (tenant.pixBeneficiaryName || tenant.name).slice(0, 25),
+        beneficiaryName: tenant.name,
+        merchantName: tenant.name.slice(0, 25),
         merchantCity: 'SAO PAULO',
         autoApproveWebhook: true,
       },
@@ -1584,7 +1637,8 @@ async function startServer() {
   // PUT Tenant Pix Config
   app.put('/api/v1/tenants/:slug/pix-config', requireTenantAccess('slug'), async (req: Request, res: Response) => {
     const slug = String(req.params.slug || '').trim();
-    const tenant = memoryTenants.find((t) => t.slug === slug);
+    const current = await databasePool.query('SELECT name,phone,pix_config FROM tenants WHERE slug=$1', [slug]);
+    const tenant = current.rows[0];
     if (!tenant) {
       return res.status(404).json({ error: 'Restaurante não encontrado.' });
     }
@@ -1595,39 +1649,33 @@ async function startServer() {
     if (!allowedProviders.has(String(provider || 'direct_bank')) || !allowedKeyTypes.has(String(pixKeyType || 'phone'))) {
       return res.status(400).json({ error: 'Provedor ou tipo de chave Pix inválido.' });
     }
-    const cleanKey = pixKey ? String(pixKey).trim() : tenant.pixKey || tenant.phone || '';
+    const cleanKey = pixKey ? String(pixKey).trim() : tenant.pix_config?.pixKey || tenant.phone || '';
     if (cleanKey.length < 3 || cleanKey.length > 77) return res.status(400).json({error:'Chave Pix inválida.'});
     if((['cpf','cnpj'].includes(pixKeyType) && !validTaxId(cleanKey)) || (pixKeyType==='email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanKey)) || (pixKeyType==='phone' && !/^55\d{10,11}$/.test(phoneNumber(cleanKey))) || (pixKeyType==='random' && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanKey))) return res.status(400).json({error:'Chave Pix incompatível com o tipo informado.'});
-    const cleanBeneficiary = String(beneficiaryName || merchantName || tenant.pixBeneficiaryName || tenant.name).trim();
+    const cleanBeneficiary = String(beneficiaryName || merchantName || tenant.pix_config?.beneficiaryName || tenant.name).trim();
 
-    tenant.pixKey = cleanKey;
-    tenant.pixBeneficiaryName = cleanBeneficiary;
-    tenant.pixConfig = {
-      ...(tenant.pixConfig || {}),
+    const nextConfig = {
+      ...(tenant.pix_config || {}),
       provider: provider || 'direct_bank',
       pixKey: cleanKey,
       pixKeyType: pixKeyType || 'phone',
       beneficiaryName: cleanBeneficiary,
       merchantName: cleanBeneficiary.slice(0, 25),
       merchantCity: merchantCity ? String(merchantCity).trim().slice(0, 15).toUpperCase() : 'SAO PAULO',
-      bankName: bankName ? String(bankName).trim() : tenant.pixConfig?.bankName || 'Conta Bancária do Proprietário',
+      bankName: bankName ? String(bankName).trim() : tenant.pix_config?.bankName || 'Conta Bancária do Proprietário',
       autoApproveWebhook: autoApproveWebhook ?? true,
       updatedAt: new Date().toISOString(),
     };
 
-    if (pgPool) {
-      await pgPool
-        .query('UPDATE tenants SET pix_config = $1::jsonb, updated_at = NOW() WHERE slug = $2;', [
-          JSON.stringify(tenant.pixConfig),
-          tenant.slug,
-        ])
-;
-    }
+    const saved = await databasePool.query('UPDATE tenants SET pix_config=$1::jsonb,updated_at=NOW() WHERE slug=$2 RETURNING pix_config', [JSON.stringify(nextConfig),slug]);
+    if (!saved.rows[0]) return res.status(404).json({ error: 'Restaurante não encontrado.' });
+    const cached = memoryTenants.find((item) => item.slug === slug);
+    if (cached) { cached.pixConfig = saved.rows[0].pix_config; cached.pixKey = cleanKey; cached.pixBeneficiaryName = cleanBeneficiary; }
 
     res.json({
       success: true,
       message: `Chave Pix e Nome do Beneficiário atualizados com sucesso para ${tenant.name}!`,
-      data: tenant.pixConfig,
+      data: saved.rows[0].pix_config,
     });
   });
 
@@ -1928,15 +1976,16 @@ async function startServer() {
   ];
 
   // GET notification templates for a tenant
-  app.get('/api/v1/tenants/:slug/notification-templates', requireTenantAccess('slug'), (req: Request, res: Response) => {
-    const tenant = memoryTenants.find((t) => t.slug === req.params.slug);
+  app.get('/api/v1/tenants/:slug/notification-templates', requireTenantAccess('slug'), async (req: Request, res: Response) => {
+    const result = await databasePool.query('SELECT status_notification_templates FROM tenants WHERE slug=$1',[req.params.slug]);
+    const tenant = result.rows[0];
     if (!tenant) {
       return res.status(404).json({ error: 'Restaurante não encontrado.' });
     }
 
     const templates = {
       ...defaultStatusTemplates,
-      ...(tenant.statusNotificationTemplates || {}),
+      ...(tenant.status_notification_templates || {}),
     };
 
     res.json({
@@ -1950,22 +1999,18 @@ async function startServer() {
 
   // PUT notification templates for a tenant (Protected by Multi-Tenant JWT Guard)
   app.put('/api/v1/tenants/:slug/notification-templates', requireTenantAccess('slug'), async (req: Request, res: Response) => {
-    const tenant = memoryTenants.find((t) => t.slug === req.params.slug);
-    if (!tenant) {
-      return res.status(404).json({ error: 'Restaurante não encontrado.' });
-    }
-
     const { templates } = req.body;
-    tenant.statusNotificationTemplates = {
-      ...(tenant.statusNotificationTemplates || {}),
-      ...(templates || {}),
-    };
-    await databasePool.query('UPDATE tenants SET status_notification_templates=$1::jsonb,updated_at=NOW() WHERE slug=$2',[JSON.stringify(tenant.statusNotificationTemplates),tenant.slug]);
+    if (!templates || typeof templates !== 'object' || Array.isArray(templates)) return res.status(400).json({error:'Modelos inválidos.'});
+    const result = await databasePool.query(`UPDATE tenants SET status_notification_templates=COALESCE(status_notification_templates,'{}'::jsonb) || $1::jsonb,updated_at=NOW()
+      WHERE slug=$2 RETURNING status_notification_templates`,[JSON.stringify(templates),req.params.slug]);
+    if (!result.rows[0]) return res.status(404).json({ error: 'Restaurante não encontrado.' });
+    const cached = memoryTenants.find((item) => item.slug === req.params.slug);
+    if (cached) cached.statusNotificationTemplates = result.rows[0].status_notification_templates;
 
     res.json({
       success: true,
       message: 'Modelos de notificação do WhatsApp atualizados com sucesso!',
-      data: tenant.statusNotificationTemplates,
+      data: result.rows[0].status_notification_templates,
     });
   });
 
@@ -4008,6 +4053,7 @@ async function startServer() {
   app.post('/api/v1/auth/logout', async (req, res) => {
     const claims = getAuthenticatedClaims(req);
     await databasePool.query('UPDATE auth_sessions SET revoked_at=NOW() WHERE id=$1 AND user_id=$2', [claims.jti, claims.sub]);
+    clearSessionCookie(req, res);
     res.json({ success: true });
   });
 
@@ -4131,6 +4177,8 @@ async function startServer() {
     ipRateLimits.delete(rateKey);
 
     const { token, claims } = await signJwtToken(user);
+    const asCookie = cookieMode(req);
+    if (asCookie) setSessionCookie(req, res, token);
 
     memoryAuthAuditLogs.unshift({
       id: `audit_${Date.now()}`,
@@ -4147,7 +4195,8 @@ async function startServer() {
 
     res.json({
       success: true,
-      token,
+      token: asCookie ? '' : token,
+      ...(asCookie ? { csrfToken: csrfToken(claims.jti) } : {}),
       user: {
         id: user.id,
         name: user.name,
@@ -4310,9 +4359,9 @@ async function startServer() {
 
   // GET /api/v1/auth/session (Garante sessão válida assinada com o JWT_SECRET atual da VPS)
   app.get('/api/v1/auth/session', async (req: Request, res: Response) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    const claims = token ? verifyJwtToken(token) : null;
+    const currentAuth = authToken(req);
+    const token = currentAuth?.token;
+    const claims = getAuthenticatedClaims(req);
 
     if (!claims || !claims.sub) {
       return res.status(401).json({
@@ -4325,12 +4374,15 @@ async function startServer() {
     const row = current.rows[0];
     const targetUser = row ? { id:row.id,name:row.name,email:row.email,phone:row.phone,role:row.role,tenantId:row.tenant_id,tenantSlug:row.tenant_slug,tenantName:row.tenant_name,permissions:row.permissions } : null;
     if (!targetUser) return res.status(401).json({ error: 'Conta indisponível.' });
-    const freshToken = token;
+    const asCookie = currentAuth?.source === 'cookie' || cookieMode(req);
+    if (asCookie && token) setSessionCookie(req, res, token);
+    const freshToken = asCookie ? '' : token;
     const freshClaims = claims;
 
     res.json({
       success: true,
       token: freshToken,
+      ...(asCookie ? { csrfToken: csrfToken(claims.jti) } : {}),
       user: {
         id: targetUser.id,
         name: targetUser.name,
@@ -4406,8 +4458,10 @@ async function startServer() {
       passwordHash: user.password_hash, role: user.role, tenantId: user.tenant_id, tenantSlug: user.tenant_slug,
       tenantName: user.tenant_name, permissions: user.permissions };
     const { token, claims } = await signJwtToken(sessionUser);
+    const asCookie = cookieMode(req);
+    if (asCookie) setSessionCookie(req, res, token);
     const { passwordHash: _hash, ...publicUser } = sessionUser;
-    res.json({ success: true, token, claims, user: publicUser, authMethod: 'whatsapp_otp', authenticatedAt: new Date().toISOString() });
+    res.json({ success: true, token: asCookie ? '' : token, ...(asCookie ? { csrfToken: csrfToken(claims.jti) } : {}), claims, user: publicUser, authMethod: 'whatsapp_otp', authenticatedAt: new Date().toISOString() });
   });
 
   // GET /api/v1/auth/audit-logs (Protected: SUPER_ADMIN only)

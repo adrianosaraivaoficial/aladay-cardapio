@@ -443,14 +443,7 @@ export default function App() {
   const [topMenuLinkCopied, setTopMenuLinkCopied] = useState<boolean>(false);
   const [kickoffSessionKey, setKickoffSessionKey] = useState<number>(() => Date.now());
 
-  const [authSession, setAuthSession] = useState<AuthSession | null>(() => {
-    try {
-      const saved = localStorage.getItem('aladay_auth_session');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [authSession, setAuthSession] = useState<AuthSession | null>(null);
 
   const isExcludedPlatformPlaceholderTenant = (t: Partial<RestaurantTenant> | null | undefined): boolean => {
     if (!t || !t.slug) return true;
@@ -620,7 +613,7 @@ export default function App() {
   }, []);
   React.useEffect(() => {
     setCustomers([]);
-    if (!authSession?.token || !tenant.slug || authSession.user.role === 'KITCHEN_STAFF') return;
+    if (!authSession || !tenant.slug || authSession.user.role === 'KITCHEN_STAFF') return;
     let cancelled = false;
     fetch(`/api/v1/tenants/${encodeURIComponent(tenant.slug)}/customers`, { headers: { Authorization: `Bearer ${authSession.token}` } })
       .then(async response => { if (!response.ok) throw new Error(); return response.json(); })
@@ -683,34 +676,25 @@ export default function App() {
     };
   }, [catalogsByTenant]);
 
-  // Synchronize and refresh JWT session with backend if a token exists
+  // Restore the HttpOnly cookie session; exchange any legacy browser token once.
   React.useEffect(() => {
-    if (!authSession?.token) return;
+    let legacyToken = '';
+    try {
+      legacyToken = JSON.parse(localStorage.getItem('aladay_auth_session') || 'null')?.token || '';
+      localStorage.removeItem('aladay_auth_session');
+    } catch { /* storage may be disabled */ }
     fetch('/api/v1/auth/session', {
-      headers: { Authorization: `Bearer ${authSession.token}` },
+      headers: legacyToken ? { Authorization: `Bearer ${legacyToken}` } : {},
     })
-      .then((res) => {
-        if (res && res.status === 401) {
-          handleLogout();
-          return null;
-        }
-        return res && res.ok ? res.json() : null;
-      })
+      .then((res) => res.ok ? res.json() : null)
       .then((data) => {
-        if (data && data.success && data.token) {
-          setAuthSession((prev) => {
-            if (!prev) return null;
-            return {
-              ...prev,
-              token: data.token,
-              user: data.user || prev.user,
-              claims: data.claims || prev.claims,
-            };
-          });
-        }
+        if (data?.success && data.user) setAuthSession((prev) => prev || {
+          token: '', user: data.user, claims: data.claims,
+          authMethod: 'password', authenticatedAt: new Date().toISOString(),
+        });
       })
       .catch(() => {});
-  }, [authSession?.token]);
+  }, []);
 
   // ===========================================================================
   // SCRIPT DE VERIFICAÇÃO: EXPIRAÇÃO DOS 15 DIAS DE TESTE GRÁTIS & ASSINATURA ASAAS
@@ -730,7 +714,7 @@ export default function App() {
 
   // Sincroniza o status real da assinatura do tenant junto à API do Asaas no backend
   React.useEffect(() => {
-    if (!tenant?.slug || !authSession?.token) return;
+    if (!tenant?.slug || !authSession) return;
     let isMounted = true;
 
     fetch(`/api/v1/asaas/subscription/${encodeURIComponent(tenant.slug)}`, {
@@ -1188,7 +1172,7 @@ export default function App() {
 
   // Catalog changes remain drafts until explicitly saved by the owner.
   const saveCatalog = async () => {
-    if (!authSession?.token || catalogSaving) return;
+    if (!authSession || catalogSaving) return;
     setCatalogSaving(true); setCatalogSaveState('Salvando…');
     try {
       const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${authSession.token}` };
@@ -1359,13 +1343,18 @@ export default function App() {
   };
 
   const handleSessionAuthenticated = (newSession: AuthSession) => {
-    setAuthSession(newSession);
+    setAuthSession({ ...newSession, token: newSession.token || '' });
     setShowSubscriptionNoticeModal(false);
     try {
-      localStorage.setItem('aladay_auth_session', JSON.stringify(newSession));
+      localStorage.removeItem('aladay_auth_session');
     } catch {
       // ignore
     }
+    if (newSession.token) void fetch('/api/v1/auth/session', {
+      headers: { Authorization: `Bearer ${newSession.token}` },
+    }).then((res) => res.ok ? res.json() : null).then((data) => {
+      if (data?.success) setAuthSession((prev) => prev ? { ...prev, token: '' } : null);
+    }).catch(() => {});
     if (newSession.user.role === 'SUPER_ADMIN') {
       setCurrentView('admin');
       return;
@@ -1400,7 +1389,9 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    if (authSession?.token) void fetch('/api/v1/auth/logout', { method: 'POST', headers: { Authorization: `Bearer ${authSession.token}` } }).catch(() => {});
+    if (authSession) void fetch('/api/v1/auth/logout', {
+      method: 'POST', headers: authSession.token ? { Authorization: `Bearer ${authSession.token}` } : {},
+    }).catch(() => {});
     setAuthSession(null);
     try {
       localStorage.removeItem('aladay_auth_session');

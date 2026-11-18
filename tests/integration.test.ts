@@ -267,6 +267,31 @@ test('private routes, tenant scope, kitchen role and public DTOs', async () => {
     403,
   );
 });
+test('financial settings stay tenant scoped and concurrent template edits merge in PostgreSQL', async () => {
+  const pixPath = '/api/v1/tenants/test-a/pix-config';
+  assert.equal((await request(pixPath, { pixKey:'wrong@example.invalid',pixKeyType:'email' }, kitchenToken, 'PUT')).status, 403);
+  assert.equal((await request(pixPath, { pixKey:'wrong@example.invalid',pixKeyType:'email' }, otherOwnerToken, 'PUT')).status, 403);
+  const saved = await request(pixPath, {provider:'direct_bank',pixKey:'owner-a@example.invalid',pixKeyType:'email',beneficiaryName:'Owner A'}, ownerToken, 'PUT');
+  assert.equal(saved.status, 200);
+  assert.equal((await request(pixPath, undefined, ownerToken)).body.data.pixKey, 'owner-a@example.invalid');
+  assert.equal((await pool.query('SELECT pix_config FROM tenants WHERE slug=$1',['test-a'])).rows[0].pix_config.pixKey, 'owner-a@example.invalid');
+  assert.equal((await request('/api/v1/tenants/test-b/pix-config', undefined, otherOwnerToken)).body.data.pixKey, 'test@example.invalid');
+
+  const templatePath = '/api/v1/tenants/test-a/notification-templates';
+  assert.equal((await request(templatePath, {templates:{confirmed:'cross-tenant'}}, otherOwnerToken, 'PUT')).status, 403);
+  const updates = await Promise.all([
+    request(templatePath, {templates:{confirmed:'Confirmado A'}}, ownerToken, 'PUT'),
+    request(templatePath, {templates:{preparing:'Preparando A'}}, ownerToken, 'PUT'),
+  ]);
+  assert.deepEqual(updates.map(result=>result.status),[200,200]);
+  const dbTemplates = (await pool.query('SELECT status_notification_templates FROM tenants WHERE slug=$1',['test-a'])).rows[0].status_notification_templates;
+  assert.equal(dbTemplates.confirmed,'Confirmado A');
+  assert.equal(dbTemplates.preparing,'Preparando A');
+  const read = await request(templatePath, undefined, ownerToken);
+  assert.equal(read.body.data.templates.confirmed,'Confirmado A');
+  assert.equal(read.body.data.templates.preparing,'Preparando A');
+  assert.equal((await request('/api/v1/tenants/test-b/notification-templates', undefined, otherOwnerToken)).body.data.templates.confirmed,'✅ *Pedido #{numero_pedido} Confirmado!*\n\nOlá, *{cliente_primeiro_nome}*! Seu pedido foi confirmado com sucesso pela equipe do *{restaurante_nome}* e já entrou na nossa fila de produção! 👨‍🍳🔥\n\n📦 *Itens:* {itens_resumo}\n🛵 *Tipo:* {tipo_pedido}\n📍 *Destino:* {endereco_entrega}\n💰 *Total:* {total} ({forma_pagamento})\n⏱️ *Previsão de Entrega:* {previsao_minutos} min\n\n👉 *Acompanhe em tempo real pelo link:*\n{link_rastreamento}');
+});
 test('concurrent checkout recalculates cents, creates one order and one durable event', async () => {
   const body = cart();
   const results = await Promise.all(
@@ -470,6 +495,49 @@ test('sessions do not extend expiry and logout revokes a signed token', async ()
     (await request('/api/v1/auth/session', undefined, ownerToken)).status,
     401,
   );
+});
+test('browser cookie sessions enforce origin and CSRF while Bearer clients remain compatible', async () => {
+  const legacyLogin = await fetch(`${base}/api/v1/auth/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'owner-b@example.invalid', password }),
+  });
+  assert.equal(legacyLogin.status, 200);
+  const legacyToken = (await legacyLogin.json()).token;
+  const exchanged = await fetch(`${base}/api/v1/auth/session`, { headers: {
+    Authorization: `Bearer ${legacyToken}`, 'X-Aladay-Session-Mode': 'cookie', 'Sec-Fetch-Site': 'same-origin',
+  } });
+  assert.equal(exchanged.status, 200);
+  assert.equal((await exchanged.json()).token, '');
+  assert.match(exchanged.headers.get('set-cookie') || '', /HttpOnly/i);
+  const login = await fetch(`${base}/api/v1/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: base, 'X-Aladay-Session-Mode': 'cookie' },
+    body: JSON.stringify({ email: 'owner-b@example.invalid', password }),
+  });
+  assert.equal(login.status, 200);
+  const cookie = login.headers.get('set-cookie') || '';
+  assert.match(cookie, /HttpOnly/i);
+  assert.match(cookie, /SameSite=Strict/i);
+  const sessionCookie = cookie.split(';')[0];
+  const payload = await login.json();
+  assert.equal(payload.token, '');
+  assert.ok(payload.csrfToken);
+  const session = await fetch(`${base}/api/v1/auth/session`, { headers: { Cookie: sessionCookie } });
+  assert.equal(session.status, 200);
+  assert.equal((await session.json()).token, '');
+  const mutation = (origin: string, csrf?: string) => fetch(`${base}/api/v1/auth/logout`, {
+    method: 'POST',
+    headers: { Cookie: sessionCookie, Origin: origin, ...(csrf ? { 'X-CSRF-Token': csrf } : {}) },
+  });
+  assert.equal((await mutation(base)).status, 403);
+  assert.equal((await mutation('https://attacker.example.invalid', payload.csrfToken)).status, 403);
+  assert.equal((await mutation(base, 'wrong')).status, 403);
+  const crossTenant = await fetch(`${base}/api/v1/tenants/test-a/pix-config`, { headers: { Cookie: sessionCookie } });
+  assert.equal(crossTenant.status, 403);
+  const logout = await mutation(base, payload.csrfToken);
+  assert.equal(logout.status, 200);
+  assert.match(logout.headers.get('set-cookie') || '', /Max-Age=0/);
+  assert.equal((await fetch(`${base}/api/v1/auth/session`, { headers: { Cookie: sessionCookie } })).status, 401);
 });
 test('worker retries durably and concurrent workers claim separate events', async () => {
   await pool.query("UPDATE outbox_events SET status='completed'");
