@@ -38,6 +38,21 @@ services:
     logging:
       driver: json-file
       options: {max-size: '10m', max-file: '3'}
+  migrate:
+    build: .
+    profiles: [ops]
+    env_file: .env
+    environment:
+      MIGRATION_DATABASE_URL: postgresql://aladay:${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD}@db:5432/aladay
+    command: ['node', 'scripts/migrate.mjs', '--apply', '--confirm-database=aladay']
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      db:
+        condition: service_healthy
   backup:
     image: postgres:17-alpine
     profiles: [ops]

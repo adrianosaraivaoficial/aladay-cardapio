@@ -6,7 +6,7 @@ O JWT traz `tenant_slug`, `tenant_id` e função. [server.ts](../../server.ts) v
 
 ## Testes executados
 
-O banco `aladay_test` foi criado em contêiner PostgreSQL 17 descartável local, sem volume e sem conexão com produção. [tests/integration.test.ts](../../tests/integration.test.ts) cria `test-a` e `test-b`, proprietários independentes, funcionário de cozinha e superadmin; a suíte de integração aplica a migração duas vezes e usa HTTP real. Todos os 18 testes de integração passaram após a correção. Os sete testes Playwright também passaram. As suítes contêm testes de acesso cruzado, colisão de IDs de catálogo, RBAC, transações, pagamentos e módulos novos.
+O banco `aladay_test` foi criado em contêiner PostgreSQL 17 descartável local, sem volume e sem conexão com produção. [tests/integration.test.ts](../../tests/integration.test.ts) cria `test-a` e `test-b`, proprietários independentes, funcionário de cozinha e superadmin; usa HTTP real. Os 20 testes de integração e oito Playwright passaram. As suítes contêm acesso cruzado, colisão de IDs de catálogo, RBAC, transações, pagamentos, CRM, analytics, Intelligence, upsell e feedback.
 
 | Operação exercitada | Identidade e resultado observado |
 | --- | --- |
@@ -19,6 +19,8 @@ O banco `aladay_test` foi criado em contêiner PostgreSQL 17 descartável local,
 | CRM, Intelligence, analytics, upsell e feedback de A | Cozinha de A: 403 para as operações testadas. |
 | Escrita de configurações de A | Cozinha de A: 403. |
 | Colisão de ID de produto B ao importar para A | 409; produto de B permanece com valor original. |
+| Atualização Pix de A | Cozinha de A e proprietário de B: 403; proprietário de A: 200 e valor persistido. B mantém sua chave. |
+| Edição concorrente de modelos de A | Duas chaves distintas sobreviveram em PostgreSQL; proprietário de B não pôde escrever em A. |
 
 ## Falha corrigida
 
@@ -29,4 +31,4 @@ Antes da alteração, `canAccessTenant` autorizava `KITCHEN_STAFF` a ler o objet
 - Os testes não cobrem todas as combinações de método, recurso e função. Em especial, devem ser ampliados para outras mutações e exclusões de configuração, assinatura e relatórios com dados A/B independentes. A auditoria estática encontrou escopo nos caminhos principais, mas isso não substitui testes exaustivos.
 - IDs globais de produto e categoria impedem colisões silenciosas, mas o modelo misto de `tenant_id` e `tenant_slug` exige consistência em cada gravação. Auditar dados históricos antes de validar as constraints `NOT VALID`.
 - RLS pode ser uma segunda barreira: criar papel de aplicação sem `BYPASSRLS`, contexto de tenant definido por transação com `SET LOCAL`, políticas `USING` e `WITH CHECK`, e testes de jobs/admin/webhooks sem contexto de usuário. Aplicar primeiro em staging; a conexão compartilhada e fluxos de superadmin precisam de desenho explícito. Não ativar políticas em produção de modo global sem essa transição.
-- O cache em memória pode criar leituras divergentes entre réplicas. Testar duas instâncias sobre o mesmo banco antes de escalar horizontalmente.
+- Pix e modelos de notificação agora são lidos do PostgreSQL, com atualização de modelos atômica. Outros caches podem criar leituras divergentes entre réplicas. Testar duas instâncias sobre o mesmo banco antes de escalar horizontalmente.

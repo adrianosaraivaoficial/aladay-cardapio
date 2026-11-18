@@ -1,5 +1,8 @@
 # Run with a separate project and env file to isolate database, network and secrets.
 services:
+  migrate:
+    env_file: !override
+      - .env.staging
   app:
     env_file: !override
       - .env.staging

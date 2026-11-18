@@ -38,6 +38,8 @@ async function countDuplicates(table, columns, where = 'TRUE') {
 
 async function preflight() {
   const checks = {
+    tenantSlugDuplicates: await countDuplicates('tenants', 'slug'),
+    subscriberEmailDuplicates: await countDuplicates('subscriber_users', 'email'),
     orderIdempotencyDuplicates: await countDuplicates('orders', 'tenant_slug,idempotency_key', 'idempotency_key IS NOT NULL'),
     pixOrderDuplicates: await countDuplicates('pix_transactions', 'order_id'),
     pixEndToEndDuplicates: await countDuplicates('pix_transactions', 'end_to_end_id', 'end_to_end_id IS NOT NULL'),

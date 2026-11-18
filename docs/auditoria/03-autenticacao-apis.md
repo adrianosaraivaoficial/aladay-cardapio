@@ -1,26 +1,26 @@
-# Autenticação e proteção das APIs — 17/11/2026
+# Autenticação e proteção das APIs — atualização de 17/11/2026
 
-## Fluxo observado
+## Fluxo implementado
 
-- Login em [server.ts](../../server.ts): senha scrypt com salt e comparação constante, limite por IP e conta em PostgreSQL, JWT HS256 de 12 horas. `auth_sessions` guarda `jti`, usuário, hash da credencial, expiração e revogação; cada requisição com Bearer compara a sessão e o usuário persistidos. Logout revoga a sessão. Teste de revogação e expiração passou em [tests/integration.test.ts](../../tests/integration.test.ts).
-- OTP WhatsApp usa telefone já cadastrado, código aleatório de seis dígitos, HMAC armazenado, validade de dez minutos, limites por IP/conta e consumo único transacional. Teste com serviço Evolution local passou. Não houve teste com Evolution real.
-- O perímetro em [backend/security.ts](../../backend/security.ts) enumera rotas públicas. As demais exigem sessão, e rotas de tenant dependem de verificação de escopo. Superadmin tem acesso global; `KITCHEN_STAFF` tem alterações limitadas. A correção de leitura Pix e serialização está registrada em [02-seguranca-multitenant.md](./02-seguranca-multitenant.md).
-- Não há cookies de autenticação no fluxo atual. O frontend armazena JWT em `localStorage` em [src/App.tsx](../../src/App.tsx) e envia `Authorization: Bearer`. Isso evita CSRF de cookie no fluxo atual, mas deixa o token acessível a JavaScript da página. CSP em produção e escape padrão do React reduzem superfície de XSS; não constituem prova de ausência de XSS. Não foi encontrada configuração CORS permissiva no Express, mas isso não substitui autenticação.
-- `express.json` limita o corpo a 1 MB, há validações por rota e SQL parametrizado nos fluxos principais inspecionados. Sem auditoria dinâmica de todas as entradas, não se declara ausência de SQL injection ou XSS.
+- Login com scrypt, limite por IP e conta no PostgreSQL, sessão de 12 horas persistida em `auth_sessions`, revogação no logout e invalidação após mudança de hash de senha permanecem em [server.ts](../../server.ts). OTP WhatsApp continua vinculado ao telefone cadastrado, com HMAC, validade, limite e consumo único. Os testes usam Evolution local, não o serviço real.
+- O navegador solicita modo cookie em login, verificação OTP e renovação de sessão. O backend emite `aladay_session` com `HttpOnly`, `SameSite=Strict`, `Path=/`, prazo de 12 horas e `Secure` em produção. O JSON do modo cookie não contém JWT e inclui token CSRF derivado por HMAC do identificador da sessão.
+- Escritas privadas por cookie exigem `Origin` igual a `APP_URL` e `X-CSRF-Token` válido. GET de troca de Bearer legado por cookie aceita `Sec-Fetch-Site: same-origin`, pois navegadores omitem `Origin` nesse método. O cookie exige sessão ativa no banco. APIs com Bearer continuam funcionando durante a transição.
+- [src/App.tsx](../../src/App.tsx) remove `aladay_auth_session` do `localStorage`, troca o token legado por cookie uma vez e restaura a sessão após reload. [src/utils/sessionFetch.ts](../../src/utils/sessionFetch.ts) adapta as chamadas existentes e mantém o CSRF apenas na memória da aba. Essa adaptação global é temporária e deverá ser substituída gradualmente por cliente HTTP explícito.
 
-## Riscos pendentes
+## Evidência de testes
 
-| Risco | Evidência / ação segura |
+- [tests/integration.test.ts](../../tests/integration.test.ts) cobre Bearer legado, troca por cookie, revogação, acesso cruzado, falha sem CSRF, CSRF errado e origem externa. OTP continua testado com provedor local.
+- [tests/e2e/intelligence.spec.ts](../../tests/e2e/intelligence.spec.ts) verifica cookie `HttpOnly`/`SameSite`, ausência de JWT no `localStorage`, reload, logout e rejeição de CSRF inválido. Os oito testes Playwright passaram em banco descartável.
+- Sem HTTPS na suíte local, o atributo `Secure` foi verificado por inspeção do código, não por navegador em ambiente de produção. Login real via Evolution e retorno de gateway exigem homologação em staging.
+
+## Riscos restantes
+
+| Área | Ação |
 | --- | --- |
-| Roubo de token por XSS | `localStorage` em `src/App.tsx`; revisar pontos de HTML dinâmico e dependências, planejar cookies `HttpOnly`, `Secure` e `SameSite`. |
-| Revogação de sessão após troca de credencial | Comparação de `credential_hash` existe; adicionar testes de atualização de senha e de sessão em múltiplas réplicas. |
-| Limites locais por processo | O limite rápido de login usa `Map`; há limite persistido em PostgreSQL. Testar pressão em múltiplas instâncias e política de proxy confiável. |
-| Permissões incompletas por rota | As regras gerais não substituem um inventário de capacidades por função. Continuar matriz de testes para cada método sensível. |
-| Segredos e configuração | `persistEnvConfig` em `server.ts` tenta escrever `.env`; Docker de produção é read-only. Atualizações via painel podem divergir do ambiente após reinício. Desenhar armazenamento/rotação explícitos antes de mudar esse fluxo. |
+| XSS | Cookie `HttpOnly` protege o JWT contra leitura direta, mas XSS ainda pode executar ações na aba. Revisar HTML dinâmico, CSP e dependências. |
+| Cliente HTTP | A adaptação de `window.fetch` cobre as chamadas atuais. Migrar para cliente explícito por módulo e verificar bibliotecas que não usem `fetch` global. |
+| Sessões antigas | Clientes Bearer permanecem aceitos até expirar em até 12 horas; não houve revogação em massa. Monitorar uso e planejar retirada com janela anunciada. |
+| Ambiente | `APP_URL` precisa refletir exatamente a origem HTTPS. Validar proxy confiável, `Secure`, OTP, várias abas e login administrativo no EasyPanel de homologação. |
+| Permissões | Testes A/B cobrem módulos principais, mas ainda falta matriz exaustiva de todos os métodos, exclusões e webhooks. |
 
-## Transição proposta para cookie, sem mudança nesta branch
-
-1. Adicionar emissão opcional de cookie para clientes novos, preservando Bearer existente por janela definida; registrar métricas sem tokens.
-2. Implementar token CSRF para métodos de escrita autenticados por cookie e validar `Origin`/`Referer` com domínio configurado. Decidir `SameSite=Lax` ou `Strict` após testar fluxos de pagamento e retorno.
-3. Atualizar frontend e testes de login, refresh, logout, OTP, redirecionamentos, dois tenants, permissões e múltiplas abas; só então remover persistência antiga do JWT.
-4. Revogar sessões antigas de forma controlada após a transição e publicar instruções para clientes. Não alterar autenticação sem suíte de ponta a ponta completa.
+Não houve alteração de credenciais existentes nem migração de sessões de produção.
