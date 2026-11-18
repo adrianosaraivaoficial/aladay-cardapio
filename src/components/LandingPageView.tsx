@@ -4,11 +4,13 @@ import {
   ArrowRight, BarChart3, Check, ChevronDown, ChevronLeft, ChevronRight,
   CirclePlay, ExternalLink, LayoutDashboard, MenuSquare, MessageCircle,
   Play, QrCode, ScanLine, ShieldCheck, Smartphone, Sparkles, Upload, X,
+  Menu, ShoppingBag, Plus, Minus, Bot, Users, TrendingUp, Heart,
 } from 'lucide-react';
 import { AuthSession, RestaurantTenant } from '../types';
 import {
   ConsentStatus, getConsentStatus, initGA4, setConsentStatus, trackConversionEvent,
 } from '../utils/analytics';
+import './landingV2.css';
 
 interface LandingPageViewProps {
   tenant: RestaurantTenant;
@@ -89,6 +91,10 @@ const FAQS = [
     answer: 'Sim. A plataforma possui automações de WhatsApp para a comunicação do pedido e das atualizações de status, conforme a configuração da operação.',
   },
   {
+    question: 'A Aladay funciona para delivery e retirada?',
+    answer: 'Sim. O restaurante pode configurar jornadas de entrega e retirada conforme a própria operação.',
+  },
+  {
     question: 'A Aladay cobra comissão sobre as vendas diretas?',
     answer: 'Não. Nos planos apresentados, a Aladay cobra uma assinatura fixa e não retém comissão sobre os pedidos diretos feitos no cardápio da loja.',
   },
@@ -104,12 +110,22 @@ const FAQS = [
     question: 'Como funciona o teste gratuito?',
     answer: 'O plano mensal inclui 15 dias de teste gratuito. Nesse período, o restaurante pode experimentar os recursos antes da cobrança mensal de R$ 129,90.',
   },
+  {
+    question: 'Já posso usar todos os recursos Aladay AI?',
+    answer: 'Os módulos de inteligência estão em evolução. Consulte a equipe sobre os recursos disponíveis para seu restaurante e as condições de ativação.',
+  },
 ];
 
 const HOW_IT_WORKS = [
   { number: '01', icon: Upload, title: 'Configure seu cardápio', description: 'Organize produtos e categorias e deixe o menu digital pronto para receber clientes.' },
   { number: '02', icon: ScanLine, title: 'Compartilhe seu QR Code', description: 'Divulgue no salão, nas redes sociais, no balcão e nas embalagens do restaurante.' },
   { number: '03', icon: MessageCircle, title: 'Receba e acompanhe pedidos', description: 'Centralize a operação no painel e mantenha o cliente informado pelo WhatsApp.' },
+];
+
+const SAMPLE_PRODUCTS = [
+  { id: 'burger', category: 'Lanches', name: 'Hambúrguer especial', detail: 'Carne, queijo e molho da casa', price: 29.9, image: '/assets/landing-v2/burger.svg' },
+  { id: 'pizza', category: 'Pizzas', name: 'Pizza artesanal', detail: 'Molho especial e muito sabor', price: 49.9, image: '/assets/landing-v2/pizza.svg' },
+  { id: 'acai', category: 'Sobremesas', name: 'Açaí especial', detail: 'Frutas e complementos', price: 19.9, image: '/assets/landing-v2/acai.svg' },
 ];
 
 const FadeIn = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => {
@@ -147,6 +163,11 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   const [monthlyOrders, setMonthlyOrders] = useState(450);
   const [averageTicket, setAverageTicket] = useState(68);
   const [marketplaceFee, setMarketplaceFee] = useState(18);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [sampleCategory, setSampleCategory] = useState('Todos');
+  const [sampleCart, setSampleCart] = useState<Record<string, number>>({});
+  const [sampleCartOpen, setSampleCartOpen] = useState(false);
+  const [sampleMessage, setSampleMessage] = useState('');
 
   useEffect(() => {
     const status = getConsentStatus();
@@ -177,6 +198,28 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   const formatBRL = (value: number) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
+  const sampleCount = Object.values(sampleCart).reduce((sum, count) => sum + count, 0);
+  const sampleTotal = SAMPLE_PRODUCTS.reduce((sum, product) => sum + product.price * (sampleCart[product.id] || 0), 0);
+  const changeSampleQuantity = (id: string, delta: number) => {
+    setSampleCart((cart) => ({ ...cart, [id]: Math.max(0, (cart[id] || 0) + delta) }));
+    setSampleMessage('');
+  };
+
+  const sendContactMessage = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!form.reportValidity()) return;
+    const data = new FormData(form);
+    if (data.get('website')) return;
+    const name = String(data.get('name') || '').trim();
+    const restaurant = String(data.get('restaurant') || '').trim();
+    const phone = String(data.get('phone') || '').trim();
+    const segment = String(data.get('segment') || '').trim();
+    trackConversionEvent('click_whatsapp_contact', { source: 'landing_v2_form' });
+    const message = encodeURIComponent(`Olá! Sou ${name}, do restaurante ${restaurant} (${segment}). Meu WhatsApp é ${phone}. Quero conhecer a Aladay.`);
+    window.open(`https://wa.me/559131976334?text=${message}`, '_blank', 'noopener,noreferrer');
+  };
+
   const handleSignup = (source: string, cycle = planCycle) => {
     trackConversionEvent('click_signup', {
       source,
@@ -193,68 +236,53 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   };
 
   const openSupportWhatsApp = () => {
-    trackConversionEvent('click_whatsapp_contact', { source: 'landing_2_0' });
+    trackConversionEvent('click_whatsapp_contact', { source: 'landing_v2' });
     const message = encodeURIComponent('Olá! Gostaria de conhecer a Aladay para digitalizar o meu restaurante.');
     window.open(`https://wa.me/559131976334?text=${message}`, '_blank', 'noopener,noreferrer');
   };
 
   return (
-    <div className="aladay-landing -mx-4 -mt-4 overflow-hidden bg-[#f5f7fa] text-slate-950 sm:-mx-6 sm:-mt-6">
-      <section className="relative min-h-[680px] overflow-hidden bg-slate-950 text-white lg:min-h-[720px]">
-        <img
-          src="/assets/landing/aladay-hero.webp"
-          alt="Hambúrguer artesanal apresentado em ambiente de restaurante"
-          className="absolute inset-0 h-full w-full object-cover object-center opacity-60"
-          fetchPriority="high"
-          width={1920}
-          height={1080}
-          decoding="async"
-        />
-        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,.98)_0%,rgba(2,6,23,.9)_45%,rgba(2,6,23,.3)_100%)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(2,6,23,.12)_0%,rgba(2,6,23,.22)_65%,rgba(2,6,23,.92)_100%)]" />
-        <div className="relative mx-auto grid min-h-[680px] max-w-7xl items-center gap-12 px-6 py-16 sm:px-10 lg:min-h-[720px] lg:grid-cols-[1.08fr_.92fr] lg:px-12">
-          <div className="relative z-10 max-w-3xl">
-            <div className="mb-7 inline-flex items-center gap-2 border border-white/20 bg-black/30 px-3 py-2 text-[11px] font-bold uppercase text-white backdrop-blur-md">
-              <span className="h-2 w-2 bg-emerald-400" />
-              Tecnologia que trabalha com o seu restaurante
-            </div>
-            <h1 className="max-w-3xl text-4xl font-extrabold leading-[1.03] sm:text-5xl lg:text-[64px]">
-              Seu restaurante mais digital. Seus pedidos muito mais simples.
-            </h1>
-            <p className="mt-6 max-w-2xl text-base leading-relaxed text-slate-200 sm:text-lg">
-              Modernize seu atendimento com cardápio digital, QR Code e pedidos pelo WhatsApp. Uma experiência prática para o seu restaurante e seus clientes.
-            </p>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <button type="button" onClick={() => handleSignup('hero_primary')} className="group inline-flex min-h-12 items-center justify-center gap-2 bg-blue-600 px-6 py-3 text-sm font-bold text-white transition hover:bg-blue-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
-                Começar teste grátis
-                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-              </button>
-              <button type="button" onClick={() => handleDemo('hero_secondary')} className="inline-flex min-h-12 items-center justify-center gap-2 border border-white/25 bg-white/10 px-6 py-3 text-sm font-bold text-white backdrop-blur-md transition hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
-                <CirclePlay className="h-4 w-4" /> Ver como funciona
-              </button>
-            </div>
-            <div className="mt-8 flex flex-wrap gap-x-6 gap-y-3 text-xs font-semibold text-slate-300">
-              <span className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" /> 15 dias grátis</span>
-              <span className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" /> 0% de comissão</span>
-              <span className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" /> Sem instalar aplicativo</span>
-            </div>
+    <div className="aladay-landing aladay-v2 overflow-hidden bg-[#f6f9fd] text-[#0b274a]">
+      <a href="#conteudo-aladay" className="v2-skip">Pular para o conteúdo</a>
+      <header className="v2-header" id="topo">
+        <div className="v2-nav-shell">
+          <a className="v2-logo" href="#topo" aria-label="Aladay, voltar ao início"><span className="v2-logo-mark">A</span><span>ala<span>day</span></span></a>
+          <nav className="v2-desktop-nav" aria-label="Navegação principal">
+            <a href="#recursos">Recursos</a><a href="#como-funciona">Como funciona</a><a href="#aladay-ai">Aladay AI</a><a href="#planos">Planos</a><a href="#duvidas">Dúvidas</a>
+          </nav>
+          <div className="v2-header-actions">
+            <button type="button" onClick={authSession ? onNavigateToAdmin : onNavigateToLogin}>{authSession ? 'Meu painel' : 'Entrar'}</button>
+            <button type="button" className="v2-primary" onClick={() => handleSignup('header')}>Começar grátis <ArrowRight size={16} /></button>
           </div>
-          <div className="relative hidden h-[580px] items-center justify-center lg:flex" aria-label="Prévia real do cardápio digital Aladay">
-            <div className="absolute right-0 top-10 h-[530px] w-[274px] rotate-[4deg] overflow-hidden rounded-[38px] border-[9px] border-slate-900 bg-white shadow-[0_35px_90px_rgba(0,0,0,.55)]">
-              <img src={PHONE_CAPTURE} alt="Cardápio digital Aladay em smartphone" className="h-full w-full object-cover object-top" />
-            </div>
-            <div className="absolute bottom-16 left-2 w-64 rounded-lg border border-white/20 bg-slate-950/85 p-4 shadow-2xl backdrop-blur-xl">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center bg-emerald-500 text-white"><MessageCircle className="h-5 w-5" /></div>
-                <div><p className="text-[10px] font-bold uppercase text-emerald-300">Pedido atualizado</p><p className="mt-1 text-xs font-semibold text-white">A caminho pelo WhatsApp</p></div>
-              </div>
-            </div>
-            <div className="absolute right-44 top-24 flex items-center gap-2 rounded-lg border border-white/20 bg-white/95 px-4 py-3 text-slate-950 shadow-xl">
-              <QrCode className="h-5 w-5 text-blue-600" /><span className="text-xs font-bold">Escaneou. Abriu.</span>
-            </div>
+          <button type="button" className="v2-mobile-toggle" onClick={() => setMobileNavOpen(!mobileNavOpen)} aria-label={mobileNavOpen ? 'Fechar menu' : 'Abrir menu'} aria-controls="v2-mobile-menu" aria-expanded={mobileNavOpen}>{mobileNavOpen ? <X size={23} /> : <Menu size={23} />}</button>
+        </div>
+        {mobileNavOpen && <nav id="v2-mobile-menu" className="v2-mobile-nav" aria-label="Navegação móvel">
+          {[['Recursos', '#recursos'], ['Como funciona', '#como-funciona'], ['Aladay AI', '#aladay-ai'], ['Planos', '#planos'], ['Dúvidas', '#duvidas']].map(([label, href]) => <a key={href} href={href} onClick={() => setMobileNavOpen(false)}>{label}</a>)}
+          <button type="button" onClick={authSession ? onNavigateToAdmin : onNavigateToLogin}>{authSession ? 'Meu painel' : 'Entrar'}</button>
+          <button type="button" className="v2-primary" onClick={() => handleSignup('mobile_header')}>Começar grátis <ArrowRight size={16} /></button>
+        </nav>}
+      </header>
+
+      <main id="conteudo-aladay">
+      <section className="v2-hero">
+        <div className="v2-hero-grid">
+          <div className="v2-hero-copy">
+            <span className="v2-eyebrow"><Sparkles size={15} /> Tecnologia que trabalha com o seu restaurante</span>
+            <h1>Mais pedidos. <span>Menos correria.</span> Tudo em um lugar.</h1>
+            <p>Cardápio digital, QR Code, pedidos pelo WhatsApp e uma operação mais organizada. A Aladay conecta seu restaurante aos clientes sem complicar sua rotina.</p>
+            <div className="v2-hero-actions"><button type="button" className="v2-primary" onClick={() => handleSignup('hero_primary')}>Começar 15 dias grátis <ArrowRight size={17} /></button><button type="button" className="v2-secondary" onClick={() => handleDemo('hero_secondary')}><CirclePlay size={17} /> Ver como funciona</button></div>
+            <div className="v2-benefits"><span><Check size={16} /> 15 dias grátis no mensal</span><span><Check size={16} /> 0% de comissão</span><span><Check size={16} /> Sem instalar aplicativo</span></div>
+          </div>
+          <div className="v2-hero-visual" aria-label="Prévia do painel e do cardápio Aladay">
+            <div className="v2-dashboard"><div className="v2-dashboard-bar"><span className="v2-dashboard-dot" /><span className="v2-dashboard-dot" /><span className="v2-dashboard-dot" /><b>Painel Aladay</b></div><img src={ADMIN_CAPTURE} alt="Captura do painel de gestão Aladay" /></div>
+            <div className="v2-phone"><img src={PHONE_CAPTURE} alt="Captura do cardápio digital Aladay" /></div>
+            <div className="v2-notice"><span><MessageCircle size={18} /></span><div><strong>Pedido atualizado</strong><small>Acompanhamento no WhatsApp</small></div></div>
+            <p className="v2-visual-caption">Capturas reais da plataforma Aladay</p>
           </div>
         </div>
       </section>
+
+      <section className="v2-segments" aria-label="Para diferentes tipos de negócio"><div className="v2-segments-inner"><strong>Feito para quem serve bem</strong><span>🍔 Hamburguerias</span><span>🍕 Pizzarias</span><span>🍽️ Restaurantes</span><span>🛵 Delivery</span><span>☕ Cafeterias</span></div></section>
 
       <section aria-label="Diferenciais comerciais" className="border-b border-slate-200 bg-white">
         <div className="mx-auto grid max-w-7xl grid-cols-2 divide-x divide-slate-200 px-6 sm:grid-cols-4 sm:px-10 lg:px-12">
@@ -269,7 +297,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         </div>
       </section>
 
-      <section className="px-6 py-20 sm:px-10 lg:py-28">
+      <section id="recursos" className="scroll-mt-24 px-6 py-20 sm:px-10 lg:py-28">
         <div className="mx-auto max-w-7xl">
           <FadeIn className="max-w-3xl">
             <p className="text-xs font-extrabold uppercase text-blue-600">Da vitrine à cozinha</p>
@@ -328,6 +356,13 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         </div>
       </section>
 
+      <section id="demonstracao" className="scroll-mt-24 bg-white px-6 py-20 sm:px-10 lg:py-24">
+        <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-2 lg:items-center">
+          <div><p className="text-xs font-extrabold uppercase text-blue-600">Experimente na prática</p><h2 className="mt-4 text-3xl font-extrabold sm:text-5xl">Uma experiência boa começa no primeiro toque.</h2><p className="mt-5 max-w-lg text-sm leading-7 text-slate-600">Teste o cardápio ilustrativo: filtre produtos, adicione itens e confira o total. Nenhum pedido real é criado nesta simulação.</p><ul className="mt-7 space-y-3 text-sm text-slate-700">{['Visual que valoriza seus produtos', 'Navegação rápida em qualquer tela', 'Carrinho fácil de usar'].map((item) => <li key={item} className="flex items-center gap-2"><Check size={17} className="text-teal-500" /> {item}</li>)}</ul><button type="button" onClick={onNavigateToDemoMenu} className="mt-8 inline-flex items-center gap-2 font-bold text-blue-700 hover:text-blue-500">Abrir cardápio real de demonstração <ExternalLink size={16} /></button></div>
+          <div className="v2-demo-shell"><div className="v2-demo-card"><div className="v2-demo-head"><span>🍴</span><div><strong>Sabor da Casa</strong><small>Uma demonstração Aladay</small></div><span>Demo</span></div><div className="v2-demo-banner"><small>ESCOLHA O QUE DÁ VONTADE</small><strong>O sabor que combina com você.</strong></div><div className="v2-demo-tabs" role="group" aria-label="Filtrar produtos">{['Todos', 'Lanches', 'Pizzas', 'Sobremesas'].map((category) => <button key={category} type="button" className={sampleCategory === category ? 'active' : ''} aria-pressed={sampleCategory === category} onClick={() => setSampleCategory(category)}>{category}</button>)}</div><div className="v2-demo-products">{SAMPLE_PRODUCTS.filter((product) => sampleCategory === 'Todos' || sampleCategory === product.category).map((product) => <div className="v2-demo-product" key={product.id}><img src={product.image} alt={`Ilustração de ${product.name.toLowerCase()}`} loading="lazy" /><div><strong>{product.name}</strong><small>{product.detail}</small><b>{formatBRL(product.price)}</b></div><button type="button" aria-label={`Adicionar ${product.name} ao carrinho`} onClick={() => changeSampleQuantity(product.id, 1)}><Plus size={18} /></button></div>)}</div><div className="v2-demo-cart"><button type="button" className="v2-demo-cart-toggle" aria-expanded={sampleCartOpen} aria-controls="v2-cart-details" onClick={() => setSampleCartOpen(!sampleCartOpen)}><ShoppingBag size={17} /> Ver meu pedido <span>{sampleCount}</span><strong>{formatBRL(sampleTotal)}</strong><ChevronDown size={17} /></button>{sampleCartOpen && <div id="v2-cart-details" className="v2-cart-details">{sampleCount === 0 ? <p>Seu carrinho está vazio.</p> : SAMPLE_PRODUCTS.filter((product) => sampleCart[product.id] > 0).map((product) => <div key={product.id} className="v2-cart-line"><span>{product.name}</span><strong>{formatBRL(product.price * sampleCart[product.id])}</strong><div><button type="button" aria-label={`Remover um ${product.name}`} onClick={() => changeSampleQuantity(product.id, -1)}><Minus size={13} /></button><b>{sampleCart[product.id]}</b><button type="button" aria-label={`Adicionar um ${product.name}`} onClick={() => changeSampleQuantity(product.id, 1)}><Plus size={13} /></button></div></div>)}<div className="v2-cart-actions"><button type="button" onClick={() => { setSampleCart({}); setSampleMessage(''); }}>Limpar carrinho</button><button type="button" disabled={!sampleCount} onClick={() => setSampleMessage('Simulação concluída. Nenhum pedido foi enviado.')}>Simular finalização <ArrowRight size={14} /></button></div>{sampleMessage && <p role="status">{sampleMessage}</p>}</div>}</div></div></div>
+        </div>
+      </section>
+
       <section className="bg-white px-6 py-20 sm:px-10 lg:py-28">
         <div className="mx-auto max-w-7xl">
           <FadeIn className="flex items-end justify-between gap-6">
@@ -351,7 +386,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         </div>
       </section>
 
-      <section className="border-y border-slate-200 bg-[#f5f7fa] px-6 py-20 sm:px-10 lg:py-28">
+      <section id="como-funciona" className="scroll-mt-24 border-y border-slate-200 bg-[#f5f7fa] px-6 py-20 sm:px-10 lg:py-28">
         <div className="mx-auto max-w-7xl">
           <FadeIn className="text-center"><p className="text-xs font-extrabold uppercase text-blue-600">Comece em três movimentos</p><h2 className="mx-auto mt-4 max-w-3xl text-3xl font-extrabold sm:text-5xl">Do primeiro cadastro ao primeiro pedido.</h2></FadeIn>
           <div className="relative mt-14 grid gap-8 lg:grid-cols-3">
@@ -365,6 +400,20 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           </div>
         </div>
       </section>
+
+      <section id="aladay-ai" className="v2-ai-section scroll-mt-24 px-6 py-20 sm:px-10 lg:py-24">
+        <div className="v2-ai-shell mx-auto grid max-w-7xl gap-10 p-8 sm:p-12 lg:grid-cols-2 lg:items-center lg:p-16">
+          <div><span className="v2-ai-badge"><Sparkles size={15} /> ALADAY AI · EM EVOLUÇÃO</span><h2 className="mt-6 text-3xl font-extrabold leading-tight sm:text-5xl">O futuro do atendimento já tem <span>nome.</span></h2><p className="mt-5 max-w-xl text-sm leading-7 text-blue-100">A Aladay desenvolve recursos de inteligência para ajudar no atendimento, organizar conversas e apoiar decisões do restaurante. Disponibilidade e configuração variam conforme o módulo.</p><div className="mt-6 grid gap-3 text-sm text-blue-100"><span className="flex gap-2"><Check size={17} /> Atendimento personalizado por estabelecimento</span><span className="flex gap-2"><Check size={17} /> Integração planejada com cardápio e WhatsApp</span><span className="flex gap-2"><Check size={17} /> Transferência para atendimento humano quando disponível</span></div><button type="button" onClick={openSupportWhatsApp} className="v2-ai-button mt-8">Conhecer os recursos <ArrowRight size={16} /></button></div>
+          <div className="v2-ai-chat" aria-label="Exemplo ilustrativo de conversa com assistente"><div className="v2-ai-chat-head"><span>✳</span><div><strong>Alay</strong><small>Exemplo de conversa · assistente Aladay</small></div></div><div className="v2-ai-chat-body"><p>Olá! 👋 Quer conhecer nosso cardápio ou fazer um pedido?</p><p>Quero ver as opções de almoço 🍽️</p><p>Perfeito! Posso te mostrar as opções disponíveis no cardápio.</p><div><span>Ver cardápio</span><span>Falar com atendente</span></div></div><div className="v2-ai-chat-foot">Escreva uma mensagem... <ArrowRight size={16} /></div></div>
+        </div>
+      </section>
+
+      <section className="px-6 py-20 sm:px-10 lg:py-24"><div className="mx-auto max-w-7xl"><p className="text-xs font-extrabold uppercase text-blue-600">Mais ferramentas para crescer</p><h2 className="mt-4 max-w-3xl text-3xl font-extrabold sm:text-5xl">Da primeira venda ao próximo cliente.</h2><p className="mt-4 max-w-3xl text-sm leading-7 text-slate-600">Além do cardápio, a plataforma reúne recursos de gestão e relacionamento. A disponibilidade depende do plano e da configuração do restaurante.</p><div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{[
+        { icon: Users, title: 'CRM e clientes', description: 'Conheça a base de clientes e organize o relacionamento.' },
+        { icon: TrendingUp, title: 'Analytics e upsell', description: 'Acompanhe indicadores e oportunidades de venda adicional.' },
+        { icon: Heart, title: 'Feedback', description: 'Receba avaliações e melhore a experiência de quem compra.' },
+        { icon: Bot, title: 'Intelligence', description: 'Explore recursos inteligentes disponíveis para a operação.' },
+      ].map(({ icon: Icon, title, description }) => <div key={title} className="rounded-lg border border-slate-200 bg-white p-6"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-700"><Icon size={22} /></span><h3 className="mt-5 text-lg font-bold">{title}</h3><p className="mt-2 text-sm leading-6 text-slate-600">{description}</p></div>)}</div></div></section>
 
       <section className="px-6 py-20 sm:px-10 lg:py-24">
         <FadeIn className="relative mx-auto grid max-w-7xl overflow-hidden rounded-lg bg-blue-600 text-white lg:grid-cols-[1fr_.72fr]">
@@ -419,7 +468,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         </div>
       </section>
 
-      <section className="bg-white px-6 py-20 sm:px-10 lg:py-28">
+      <section id="duvidas" className="scroll-mt-24 bg-white px-6 py-20 sm:px-10 lg:py-28">
         <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[.7fr_1.3fr]">
           <FadeIn><p className="text-xs font-extrabold uppercase text-blue-600">Dúvidas frequentes</p><h2 className="mt-4 text-3xl font-extrabold sm:text-5xl">Antes de colocar o cardápio no ar.</h2><button type="button" onClick={openSupportWhatsApp} className="mt-7 inline-flex items-center gap-2 text-sm font-bold text-blue-700 hover:text-blue-500">Falar com a equipe <MessageCircle className="h-4 w-4" /></button></FadeIn>
           <div className="border-t border-slate-200">
@@ -436,12 +485,15 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         </div>
       </section>
 
+      <section id="contato" className="scroll-mt-24 bg-white px-6 py-16 sm:px-10 lg:py-24"><div className="v2-contact-shell mx-auto grid max-w-7xl gap-10 p-7 text-white sm:p-12 lg:grid-cols-2 lg:gap-16 lg:p-16"><div><span className="v2-ai-badge">✳ SEU PRÓXIMO PASSO COMEÇA AQUI</span><h2 className="mt-7 text-3xl font-extrabold leading-tight sm:text-5xl">Seu restaurante pode ir <span className="text-cyan-300">muito mais longe.</span></h2><p className="mt-5 max-w-lg text-sm leading-7 text-blue-100">Conte um pouco sobre sua operação e inicie uma conversa com a equipe Aladay pelo WhatsApp.</p><div className="mt-10 space-y-5 text-sm"><p className="flex items-center gap-3"><ShieldCheck size={20} className="text-cyan-300" /> Seus dados vão apenas na mensagem que você escolher enviar.</p><p className="flex items-center gap-3"><MessageCircle size={20} className="text-cyan-300" /> Atendimento humano para conhecer os planos.</p></div></div><form className="v2-contact-form" onSubmit={sendContactMessage}><p className="text-xs font-extrabold uppercase tracking-wide text-blue-600">Vamos conversar?</p><h3 className="mt-2 text-xl font-bold">Conhecer a Aladay é o primeiro passo.</h3><div className="mt-6 grid gap-4 sm:grid-cols-2"><label>Seu nome<input name="name" type="text" minLength={2} maxLength={100} autoComplete="name" placeholder="Como podemos te chamar?" required /></label><label>Nome do restaurante<input name="restaurant" type="text" minLength={2} maxLength={120} autoComplete="organization" placeholder="Nome do seu negócio" required /></label></div><label className="mt-4">Seu WhatsApp<input name="phone" type="tel" inputMode="tel" minLength={10} maxLength={20} autoComplete="tel" placeholder="(91) 99999-9999" required /></label><label className="mt-4">Tipo de negócio<select name="segment" required defaultValue=""><option value="" disabled>Selecione uma opção</option>{['Restaurante', 'Hamburgueria', 'Pizzaria', 'Delivery', 'Cafeteria', 'Outro'].map((segment) => <option key={segment}>{segment}</option>)}</select></label><label className="v2-honeypot" aria-hidden="true">Não preencher<input name="website" type="text" tabIndex={-1} autoComplete="off" /></label><p className="mt-5 text-xs leading-5 text-slate-500">Ao continuar, o WhatsApp abre com uma mensagem preenchida. Você decide se deseja enviá-la.</p><button type="submit" className="v2-primary mt-5 w-full justify-center">Conversar pelo WhatsApp <ArrowRight size={16} /></button><button type="button" onClick={() => handleSignup('contact_form')} className="mt-4 w-full text-center text-sm font-bold text-blue-700">Prefiro começar meu teste grátis</button></form></div></section>
+
       <section className="bg-slate-950 px-6 py-20 text-white sm:px-10 lg:py-28">
         <FadeIn className="mx-auto max-w-4xl text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center bg-blue-600"><Sparkles className="h-5 w-5" /></div><h2 className="mt-7 text-3xl font-extrabold sm:text-5xl">Pronto para modernizar seu restaurante?</h2><p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-slate-400">Crie seu cardápio, organize a operação e ofereça uma jornada mais simples para quem compra de você.</p>
           <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row"><button type="button" onClick={() => handleSignup('final_cta')} className="inline-flex min-h-12 items-center justify-center gap-2 bg-blue-600 px-7 text-sm font-bold text-white transition hover:bg-blue-500">Começar meu teste grátis <ArrowRight className="h-4 w-4" /></button><button type="button" onClick={authSession ? onNavigateToAdmin : onNavigateToLogin} className="inline-flex min-h-12 items-center justify-center border border-white/20 px-7 text-sm font-bold text-white transition hover:bg-white hover:text-slate-950">{authSession ? 'Ir para meu painel' : 'Já tenho uma conta'}</button></div>
         </FadeIn>
       </section>
+      </main>
 
       <footer className="border-t border-white/10 bg-slate-950 px-6 pb-10 text-slate-500 sm:px-10">
         <div className="mx-auto flex max-w-7xl flex-col justify-between gap-5 border-t border-white/10 pt-8 text-xs sm:flex-row sm:items-center">

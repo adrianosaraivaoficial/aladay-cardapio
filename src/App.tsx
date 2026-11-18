@@ -1731,10 +1731,12 @@ export default function App() {
 
   if (feedbackToken !== null) return <Suspense fallback={<ViewLoadingFallback />}><PublicFeedbackView token={feedbackToken} /></Suspense>;
 
+  const showUniversalHeader = () => currentView !== 'home' && !(Boolean(sharedLojaParam) && !authSession && (currentView === 'consumer' || currentView === 'tracking'));
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
       {/* Universal Top Bar Contract (Ocultado quando o cliente acessa diretamente o link público sem estar logado no painel administrativo) */}
-      {!(Boolean(sharedLojaParam) && !authSession && (currentView === 'consumer' || currentView === 'tracking')) && (
+      {showUniversalHeader() && (
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-2xs">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-8">
           {/* Zone 1: Brand Wordmark with Tech Blue emblem */}
@@ -2240,7 +2242,7 @@ export default function App() {
       )}
 
       {/* Main Content Viewport */}
-      <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
+      <div className={currentView === 'home' ? 'flex-1 w-full' : 'flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6'}>
         <Suspense fallback={<ViewLoadingFallback />}>
         {currentView === 'home' && (
           <LandingPageView
