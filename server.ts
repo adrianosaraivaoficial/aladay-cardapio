@@ -1,3 +1,4 @@
+import { mountGarcom } from './backend/garcom';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -157,7 +158,7 @@ function redactStartupDiagnostic(message: string): string {
 }
 
 function getInitSqlScript(): string {
-  return ['easypanel-init.sql', 'intelligence.sql', 'crm.sql', 'menu-import.sql', 'analytics.sql', 'upsell.sql', 'feedback.sql']
+  return ['easypanel-init.sql', 'intelligence.sql', 'crm.sql', 'menu-import.sql', 'analytics.sql', 'upsell.sql', 'feedback.sql', 'garcom.sql']
     .filter(name => fs.existsSync(path.join(__dirname, 'database', name)))
     .map(name => fs.readFileSync(path.join(__dirname, 'database', name), 'utf8')).join('\n');
 }
@@ -463,7 +464,7 @@ async function startServer() {
       if (header.alg !== 'HS256' || header.typ !== 'JWT') return null;
       const claims = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
       const nowSec = Math.floor(Date.now() / 1000);
-      if (!claims || !claims.sub || !['SUPER_ADMIN', 'TENANT_OWNER', 'KITCHEN_STAFF'].includes(claims.role) || !Number.isInteger(claims.exp) || claims.exp <= nowSec || claims.iss !== 'https://aladay.com.br' || claims.aud !== 'aladay-api' || !claims.jti) {
+      if (!claims || !claims.sub || !['SUPER_ADMIN', 'TENANT_OWNER', 'KITCHEN_STAFF', 'GARCOM_STAFF'].includes(claims.role) || !Number.isInteger(claims.exp) || claims.exp <= nowSec || claims.iss !== 'https://aladay.com.br' || claims.aud !== 'aladay-api' || !claims.jti) {
         return null;
       }
 
@@ -645,6 +646,15 @@ async function startServer() {
       }
       const scoped = pathname.match(/^\/api\/v1\/(?:tenants|asaas\/subscription)\/([^/]+)/);
       const claims = getAuthenticatedClaims(req);
+      const garcom = pathname.match(/^\/api\/v1\/tenants\/([a-z0-9-]+)\/garcom\/(tables|tabs|settings|staff(?:\/garcom_[a-f0-9-]{36})?)$/);
+      if (garcom) {
+        if (!claims) return res.status(401).json({ error: 'Sessão necessária.' });
+        if (claims.role !== 'SUPER_ADMIN' && claims.tenant_slug !== garcom[1]) return res.status(403).json({ error: 'Restaurante fora do escopo da sessão.' });
+        return authenticateToken(req, res, next);
+      }
+      if (claims?.role === 'GARCOM_STAFF' && !['/api/v1/auth/session', '/api/v1/auth/logout'].includes(pathname)) {
+        return res.status(403).json({ error: 'Perfil sem permissão para esta operação.' });
+      }
       if (scoped && !canAccessTenant(claims, decodeURIComponent(scoped[1]))) return res.status(403).json({ error: 'Restaurante fora do escopo da sessão.' });
       if (claims?.role === 'KITCHEN_STAFF' && req.method !== 'GET' && !/^\/api\/v1\/orders\/[^/]+\/status$/.test(pathname)) return res.status(403).json({ error: 'Perfil sem permissão para esta alteração.' });
 
@@ -1055,6 +1065,7 @@ async function startServer() {
   mountMenuImport(app, databasePool, intelligenceGuard, hydrateTenantCatalogFromDb);
   mountMenuImportAi(app, databasePool, intelligenceGuard);
   mountCrm(app, databasePool, requireTenantAccess('slug'));
+  mountGarcom(app, databasePool, authRateLimit, hashPassword);
   mountAnalytics(app, databasePool, intelligenceGuard, requireSuperAdmin);
   mountUpsell(app, databasePool, intelligenceGuard);
   mountFeedback(app, databasePool, intelligenceGuard);
@@ -3912,7 +3923,7 @@ async function startServer() {
     email: string;
     passwordHash: string;
     phone: string;
-    role: 'SUPER_ADMIN' | 'TENANT_OWNER' | 'KITCHEN_STAFF';
+    role: 'SUPER_ADMIN' | 'TENANT_OWNER' | 'KITCHEN_STAFF' | 'GARCOM_STAFF';
     tenantId: string | '*';
     tenantSlug: string | '*';
     tenantName: string;
@@ -4009,7 +4020,7 @@ async function startServer() {
     timestamp: string;
     userEmail: string;
     userName: string;
-    role: 'SUPER_ADMIN' | 'TENANT_OWNER' | 'KITCHEN_STAFF';
+    role: 'SUPER_ADMIN' | 'TENANT_OWNER' | 'KITCHEN_STAFF' | 'GARCOM_STAFF';
     tenantSlug: string;
     method: 'password' | 'whatsapp_otp';
     ip: string;

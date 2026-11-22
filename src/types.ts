@@ -350,7 +350,7 @@ export interface WebhookLogEvent {
   fullPayload?: any;
 }
 
-export type JwtRole = 'SUPER_ADMIN' | 'TENANT_OWNER' | 'KITCHEN_STAFF';
+export type JwtRole = 'SUPER_ADMIN' | 'TENANT_OWNER' | 'KITCHEN_STAFF' | 'GARCOM_STAFF';
 
 export interface AuthUser {
   id: string;
