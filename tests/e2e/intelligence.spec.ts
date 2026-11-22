@@ -214,3 +214,34 @@ test('KDS moves an operational order without changing its financial state', asyn
   const result = await pool.query('SELECT status,payment_status FROM orders WHERE id=$1', [orderId]);
   expect(result.rows[0]).toEqual({ status: 'confirmed', payment_status: 'pending' });
 });
+
+test('Garçom signs in, opens a tab and refreshes after reconnecting', async ({ page, context, request }) => {
+  const flag = await request.put('/api/v1/tenants/' + slug + '/garcom/settings', {
+    headers: { Authorization: 'Bearer ' + adminSession.token }, data: { enabled: true },
+  });
+  expect(flag.ok()).toBe(true);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+  await page.goto('/app/garcom');
+  await expect(page).toHaveURL(origin + '/app/garcom/');
+  await page.locator('input[type=email]').fill(email);
+  await page.locator('input[type=password]').fill(password);
+  await page.getByRole('button', { name: 'Entrar no Painel' }).click();
+  const table = page.getByRole('button', { name: /Mesa 1 Livre/ });
+  await table.click();
+
+  await context.setOffline(true);
+  await expect(page.getByText(/Sem conexão/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Abrir comanda' })).toBeDisabled();
+  const reconnect = page.waitForResponse(response => response.url().endsWith('/garcom/tables') && response.ok());
+  await context.setOffline(false);
+  await reconnect;
+
+  const open = page.getByRole('button', { name: 'Abrir comanda' });
+  await open.evaluate((button: HTMLButtonElement) => { button.click(); button.click(); });
+  await expect(page.getByRole('button', { name: /Mesa 1 Ocupada/ })).toBeVisible();
+  const result = await pool.query("SELECT count(*)::int AS total FROM garcom_tabs WHERE tenant_id=$1 AND table_number=1", [slug]);
+  expect(result.rows[0].total).toBe(1);
+  await page.reload();
+  await expect(page.getByRole('button', { name: /Mesa 1 Ocupada/ })).toBeVisible();
+});
