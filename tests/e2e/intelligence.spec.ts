@@ -197,3 +197,20 @@ test('manual feedback invite, public consent and human approval publish only the
   const reuse=await request.post('/api/v1/public/feedback',{data:{token,rating:1,publicConsent:false}});expect(reuse.status()).toBe(410);
   await publicPage.close();
 });
+
+test('KDS moves an operational order without changing its financial state', async ({ page }) => {
+  const orderId = 'ord_' + crypto.randomUUID();
+  await pool.query(
+    "INSERT INTO orders(id,order_number,tenant_id,tenant_slug,customer_name,customer_phone,subtotal_cents,total_cents,status,payment_method,payment_status) VALUES($1,813,$2,$2,'Cliente KDS E2E','5511988887777',2500,2500,'received','Dinheiro','pending')",
+    [orderId, slug],
+  );
+  await enterPanel(page);
+  await page.getByRole('button', { name: 'Gestão de Pedidos (KDS)' }).click();
+  await expect(page.getByRole('heading', { name: 'Pedidos da cozinha' })).toBeVisible();
+  await expect(page.getByText('Recebidos (1)', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Confirmar Pedido', exact: true }).click();
+  await expect(page.getByText('Em Preparo (1)', { exact: true })).toBeVisible();
+  await expect(page.getByText('Recebidos (0)', { exact: true })).toBeVisible();
+  const result = await pool.query('SELECT status,payment_status FROM orders WHERE id=$1', [orderId]);
+  expect(result.rows[0]).toEqual({ status: 'confirmed', payment_status: 'pending' });
+});

@@ -33,11 +33,14 @@ async function add(page: Page, name: string, quantity = '1') {
 test('landing opens the isolated demo and the trial returns to commercial signup', async ({ page }) => {
   await page.route('**/api/**', route => route.abort());
   await page.goto(origin);
-  const cta = page.getByRole('link', { name: 'Abrir Demonstração Interativa' });
-  await expect(cta).toHaveAttribute('href', '/demo');
-  await cta.click();
+  const ctas = page.getByRole('link', { name: 'Abrir Demonstração Interativa' });
+  await expect(ctas).toHaveCount(2);
+  for (const cta of await ctas.all()) await expect(cta).toHaveAttribute('href', '/demo');
+  await ctas.first().click();
   await expect(page).toHaveURL(origin + '/demo');
   await expect(page.getByRole('heading', { name: 'Restaurante Demonstração Aladay' })).toBeVisible();
+  await expect(page.locator('[aria-current=step]')).toHaveText('Conheça o cardápio digital');
+  await expect(page.getByRole('link', { name: 'Voltar ao site Aladay' })).toHaveAttribute('href', '/');
   await expect(page.getByRole('heading', { name: 'Burger da Casa' })).toBeVisible();
   await page.getByRole('button', { name: 'Bebidas' }).click();
   await expect(page.getByRole('heading', { name: 'Limonada da casa' })).toBeVisible();
@@ -58,6 +61,7 @@ test('cart, duplicate checkout, immediate tab updates, status, reload and reset 
   await panel.goto(origin + '/demo/painel');
   await expect(panel.getByText('Nenhum pedido na sessão')).toBeVisible();
   await add(page, 'Burger da Casa', '2');
+  await expect(page.locator('[aria-current=step]')).toHaveText('Monte seu pedido');
   await add(page, 'Batatas crocantes');
   await page.getByRole('button', { name: 'Remover Batatas crocantes' }).click();
   await page.getByRole('button', { name: 'Diminuir quantidade de Burger da Casa' }).click();
@@ -68,6 +72,7 @@ test('cart, duplicate checkout, immediate tab updates, status, reload and reset 
 
   await page.getByRole('button', { name: 'Revisar pedido' }).click();
   const checkout = page.getByRole('dialog', { name: 'Checkout simulado' });
+  await expect(page.locator('[aria-current=step]')).toHaveText('Simule o checkout');
   await expect(checkout.getByRole('button', { name: 'Confirmar pedido simulado' })).toBeDisabled();
   await checkout.getByRole('radio', { name: 'Pix simulado' }).check();
   await expect(checkout).toContainText('sem validade financeira');
@@ -77,6 +82,8 @@ test('cart, duplicate checkout, immediate tab updates, status, reload and reset 
     button.click();
   });
   await expect(page.getByRole('dialog', { name: 'Pedido simulado recebido' })).toContainText('#DEMO-001');
+  await expect(page.locator('[aria-current=step]')).toHaveText('Veja o pedido recebido');
+  await expect(panel.locator('[aria-current=step]')).toHaveText('Conheça os recursos de gestão');
   await expect(panel.getByRole('heading', { name: 'Pedido #DEMO-001' })).toBeVisible();
   await expect(panel.getByRole('button', { name: /#DEMO-/ })).toHaveCount(1);
   await panel.getByRole('button', { name: 'Marcar como em preparo' }).click();
@@ -120,4 +127,35 @@ test('mobile viewport and keyboard navigation expose both views and dialog contr
   await page.getByRole('link', { name: 'Painel', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Painel do restaurante' })).toBeVisible();
   expect(await noOverflow()).toBe(true);
+});
+
+test('operational Pix UI recovers from charge failure and reports clipboard refusal honestly', async ({ page }) => {
+  let attempts = 0;
+  let status = 'PENDING';
+  await page.route('**/api/v1/pix/charges', route => {
+    attempts++;
+    if (attempts === 1) return route.fulfill({ status: 503, json: { error: 'Cobrança temporariamente indisponível.' } });
+    return route.fulfill({ json: { data: { status: 'PENDING', pixCopiaECola: 'PIX-UI-TEST-ONLY', txid: 'fixture-tx' } } });
+  });
+  await page.route('**/api/v1/pix/fixture-tx/status', route => route.fulfill({ json: { status } }));
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { value: {
+      writeText: () => Promise.reject(new DOMException('Denied', 'NotAllowedError')),
+    } });
+  });
+
+  await page.goto(origin + '/tests/e2e/fixtures/pix.html');
+  await expect(page.getByRole('alert')).toHaveText('Cobrança temporariamente indisponível.');
+  await expect(page.getByText(/escaneie o QR Code/)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Já realizei o pagamento Pix' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Tentar carregar cobrança' }).click();
+  await expect(page.getByRole('img', { name: 'QR Code Pix' })).toBeVisible();
+  await page.getByRole('button', { name: 'Copiar Código' }).click();
+  await expect(page.getByText(/O navegador bloqueou a cópia/)).toBeVisible();
+  await expect(page.getByText('Copiado!')).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: 'Código Pix Copia e Cola' })).toBeFocused();
+  await page.getByRole('button', { name: 'Já realizei o pagamento Pix' }).click();
+  await expect(page.getByRole('alert')).toContainText('Pagamento ainda não confirmado');
+  status = 'PAID';
+  await expect(page.getByText('Pagamento Registrado')).toBeVisible();
 });
