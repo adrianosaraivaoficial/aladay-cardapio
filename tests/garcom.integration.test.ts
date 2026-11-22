@@ -17,12 +17,31 @@ interface TablesResponse {
   };
 }
 
+interface TabResponse {
+  data: {
+    id: string;
+    status: string;
+    version: number;
+    totalCents: number;
+    items: Array<{
+      id: string;
+      productName: string;
+      quantity: number;
+      totalCents: number;
+      notes: string;
+      selectedOptions: Array<{ groupId: string; itemId: string; priceCents: number }>;
+      orderId: string | null;
+      orderStatus: string | null;
+    }>;
+  };
+}
+
 function passwordHash(password: string) {
   const salt = randomBytes(16).toString('hex');
   return `scrypt$${salt}$${scryptSync(password, salt, 64).toString('hex')}`;
 }
 
-test('Garçom isolates accounts and opens only one active tab per table', { timeout: 60000 }, async t => {
+test('Garçom isolates accounts and sends each table round to the kitchen once', { timeout: 60000 }, async t => {
   const connectionString = process.env.TEST_DATABASE_URL;
   assert.ok(connectionString && new URL(connectionString).pathname.endsWith('_test'), 'Use um banco descartável com sufixo _test.');
 
@@ -32,10 +51,15 @@ test('Garçom isolates accounts and opens only one active tab per table', { time
   const otherTenant = { id: `tenant-garcom-other-${suffix}`, slug: `garcom-other-${suffix}` };
   const password = 'garcom-only-test-password';
   const accounts = {
-    owner: { id: `owner-${suffix}`, email: `owner-${suffix}@example.invalid`, role: 'TENANT_OWNER' },
-    waiter: { id: `waiter-${suffix}`, email: `waiter-${suffix}@example.invalid`, role: 'GARCOM_STAFF' },
-    unassigned: { id: `unassigned-${suffix}`, email: `unassigned-${suffix}@example.invalid`, role: 'GARCOM_STAFF' },
+    owner: { id: `owner-${suffix}`, email: `owner-${suffix}@example.invalid`, role: 'TENANT_OWNER', restaurant: tenant },
+    waiter: { id: `waiter-${suffix}`, email: `waiter-${suffix}@example.invalid`, role: 'GARCOM_STAFF', restaurant: tenant },
+    unassigned: { id: `unassigned-${suffix}`, email: `unassigned-${suffix}@example.invalid`, role: 'GARCOM_STAFF', restaurant: tenant },
+    otherOwner: { id: `other-owner-${suffix}`, email: `other-owner-${suffix}@example.invalid`, role: 'TENANT_OWNER', restaurant: otherTenant },
   };
+  const product = { id: `prato-${tenant.slug}`, name: 'Tapioca da casa', priceCents: 1290 };
+  const otherProduct = { id: `prato-${otherTenant.slug}`, name: 'Prato do outro restaurante', priceCents: 1700 };
+  const option = { id: 'queijo', name: 'Queijo', priceCents: 250 };
+  const optionGroups = [{ id: 'recheio', name: 'Recheio', required: true, minSelections: 1, maxSelections: 1, items: [option] }];
   const accountIds = Object.values(accounts).map(account => account.id);
   const tenantIds = [tenant.id, otherTenant.id];
   let child: ChildProcess | undefined;
@@ -49,6 +73,10 @@ test('Garçom isolates accounts and opens only one active tab per table', { time
         await exited;
       }
       await pool.query('DELETE FROM auth_sessions WHERE user_id = ANY($1::text[])', [accountIds]);
+      await pool.query('DELETE FROM outbox_events WHERE tenant_id = ANY($1::text[])', [tenantIds]);
+      await pool.query('DELETE FROM orders WHERE tenant_id = ANY($1::text[])', [tenantIds]);
+      await pool.query('DELETE FROM products WHERE tenant_id = ANY($1::text[])', [tenantIds]);
+      await pool.query('DELETE FROM categories WHERE tenant_id = ANY($1::text[])', [tenantIds]);
       await pool.query('DELETE FROM tenants WHERE id = ANY($1::text[])', [tenantIds]);
       await pool.query('DELETE FROM subscriber_users WHERE id = ANY($1::text[])', [accountIds]);
     } finally {
@@ -56,8 +84,7 @@ test('Garçom isolates accounts and opens only one active tab per table', { time
     }
   });
 
-  // Startup applies the same module migration as the deployed server. Seed only
-  // the tables that the existing auth system needs before startup.
+  // Startup applies the module migration. Fixtures use the existing core tables.
   await pool.query(await readFile('database/easypanel-init.sql', 'utf8'));
   for (const restaurant of [tenant, otherTenant]) {
     await pool.query('INSERT INTO tenants(id, slug, name, tables_count) VALUES($1, $2, $2, 3)', [restaurant.id, restaurant.slug]);
@@ -66,7 +93,15 @@ test('Garçom isolates accounts and opens only one active tab per table', { time
     await pool.query(
       `INSERT INTO subscriber_users(id, name, email, password_hash, role, tenant_id, tenant_slug)
        VALUES($1, $1, $2, $3, $4, $5, $6)`,
-      [account.id, account.email, passwordHash(password), account.role, tenant.id, tenant.slug],
+      [account.id, account.email, passwordHash(password), account.role, account.restaurant.id, account.restaurant.slug],
+    );
+  }
+  for (const [restaurant, fixture] of [[tenant, product], [otherTenant, otherProduct]] as const) {
+    const category = `categoria-${restaurant.slug}`;
+    await pool.query('INSERT INTO categories(id, tenant_id, tenant_slug, name) VALUES($1, $2, $3, $4)', [category, restaurant.id, restaurant.slug, 'Pratos']);
+    await pool.query(
+      'INSERT INTO products(id, tenant_id, tenant_slug, category_id, name, price_cents, option_groups) VALUES($1, $2, $3, $4, $5, $6, $7)',
+      [fixture.id, restaurant.id, restaurant.slug, category, fixture.name, fixture.priceCents, JSON.stringify(optionGroups)],
     );
   }
 
@@ -126,6 +161,7 @@ test('Garçom isolates accounts and opens only one active tab per table', { time
   const owner = await login(accounts.owner.email);
   const waiter = await login(accounts.waiter.email);
   const unassigned = await login(accounts.unassigned.email);
+  const otherOwner = await login(accounts.otherOwner.email);
   const base = `/api/v1/tenants/${tenant.slug}/garcom`;
   const foreignBase = `/api/v1/tenants/${otherTenant.slug}/garcom`;
 
@@ -181,6 +217,111 @@ test('Garçom isolates accounts and opens only one active tab per table', { time
     assert.deepEqual(active.rows, [{ id: first.tab.id }, { id: second.tab.id }]);
     const audit = await pool.query("SELECT tab_id FROM garcom_audit WHERE tenant_id = $1 AND action = 'table.opened' ORDER BY id", [tenant.id]);
     assert.deepEqual(audit.rows, [{ tab_id: first.tab.id }, { tab_id: second.tab.id }]);
+  });
+
+  await t.test('prices table items from the tenant catalog and rejects foreign products and tabs', async () => {
+    const catalog = await request<{ data: { products: Array<{ id: string; name: string; priceCents: number; optionGroups: typeof optionGroups }> } }>(`${base}/catalog`, waiter);
+    assert.equal(catalog.status, 200);
+    assert.deepEqual(catalog.body.data.products.map(entry => entry.id), [product.id]);
+    const [entry] = catalog.body.data.products;
+    assert.equal(entry.name, product.name);
+    assert.equal(entry.priceCents, product.priceCents);
+    assert.deepEqual(entry.optionGroups, optionGroups);
+
+    const tables = await request<TablesResponse>(`${base}/tables`, waiter);
+    assert.equal(tables.status, 200);
+    const tab = tables.body.data.tables[0]?.tab;
+    assert.ok(tab);
+    const tabPath = `${base}/tabs/${tab.id}`;
+    assert.equal((await request(`${foreignBase}/tabs/${tab.id}`, otherOwner)).status, 404);
+    assert.equal((await request(tabPath, otherOwner)).status, 403);
+
+    const initial = await request<TabResponse>(tabPath, waiter);
+    assert.equal(initial.status, 200);
+    assert.equal(initial.body.data.id, tab.id);
+    assert.equal(initial.body.data.status, 'open');
+    assert.equal(initial.body.data.totalCents, 0);
+    assert.deepEqual(initial.body.data.items, []);
+
+    const item = {
+      productId: product.id, quantity: 2, notes: 'Sem cebola', selectedOptions: [{ groupId: 'recheio', itemId: option.id }],
+      expectedVersion: initial.body.data.version, idempotencyKey: randomUUID(),
+    };
+    assert.equal((await request(`${tabPath}/items`, waiter, { ...item, productId: otherProduct.id })).status, 409);
+    assert.equal((await request(`${tabPath}/items`, waiter, { ...item, selectedOptions: [] })).status, 400);
+    assert.equal((await request(`${tabPath}/items`, waiter, { ...item, selectedOptions: [{ groupId: 'recheio', itemId: 'invalido' }] })).status, 400);
+
+    const adds = await Promise.all([request(`${tabPath}/items`, waiter, item), request(`${tabPath}/items`, waiter, item)]);
+    assert.deepEqual(adds.map(response => response.status).sort(), [200, 201]);
+    assert.deepEqual(adds[0].body, adds[1].body);
+    assert.equal((await request(`${tabPath}/items`, waiter, { ...item, quantity: 3 })).status, 409);
+    assert.equal((await request(`${tabPath}/items`, waiter, { ...item, idempotencyKey: randomUUID() })).status, 409);
+
+    // The order must keep the price snapshot from before these catalog edits.
+    await pool.query('UPDATE products SET name = $1, price_cents = $2, option_groups = $3 WHERE id = $4', [
+      'Nome editado', 2290, JSON.stringify([{ ...optionGroups[0], items: [{ ...option, priceCents: 450 }] }]), product.id,
+    ]);
+    const saved = await request<TabResponse>(tabPath, waiter);
+    assert.equal(saved.status, 200);
+    assert.equal(saved.body.data.version, initial.body.data.version + 1);
+    assert.equal(saved.body.data.totalCents, 3080);
+    assert.equal(saved.body.data.items.length, 1);
+    const [snapshot] = saved.body.data.items;
+    assert.equal(snapshot.productName, product.name);
+    assert.equal(snapshot.quantity, 2);
+    assert.equal(snapshot.totalCents, 3080);
+    assert.equal(snapshot.notes, 'Sem cebola');
+    assert.equal(snapshot.selectedOptions.length, 1);
+    assert.equal(snapshot.selectedOptions[0].priceCents, option.priceCents);
+    assert.equal(snapshot.orderId, null);
+  });
+
+  await t.test('submits a snapshot once and exposes the new dine-in order to the existing KDS', async () => {
+    const tables = await request<TablesResponse>(`${base}/tables`, waiter);
+    assert.equal(tables.status, 200);
+    const tab = tables.body.data.tables[0]?.tab;
+    assert.ok(tab);
+    const tabPath = `${base}/tabs/${tab.id}`;
+    const pending = await request<TabResponse>(tabPath, waiter);
+    assert.equal(pending.status, 200);
+    const submission = { expectedVersion: pending.body.data.version, idempotencyKey: randomUUID() };
+    const send = () => request<{ data: { orderId: string } }>(`${tabPath}/submit`, waiter, submission);
+    const results = await Promise.all([send(), send()]);
+    assert.deepEqual(results.map(response => response.status).sort(), [200, 201]);
+    const orderId = results[0].body.data.orderId;
+    assert.match(orderId, /^ord_[a-f0-9-]{36}$/);
+    assert.equal(results[1].body.data.orderId, orderId);
+
+    const sent = await request<TabResponse>(tabPath, waiter);
+    assert.equal(sent.status, 200);
+    assert.equal(sent.body.data.version, submission.expectedVersion + 1);
+    assert.equal(sent.body.data.items.length, 1);
+    assert.equal(sent.body.data.items[0].id, pending.body.data.items[0].id);
+    assert.equal(sent.body.data.items[0].orderId, orderId);
+    assert.equal(sent.body.data.items[0].orderStatus, 'received');
+    assert.equal(sent.body.data.totalCents, 3080);
+    assert.equal((await request(`${tabPath}/submit`, waiter, { expectedVersion: sent.body.data.version, idempotencyKey: randomUUID() })).status, 409);
+
+    const orders = await pool.query(
+      'SELECT id, order_type, status, payment_status, total_cents, customer_phone, whatsapp_logs FROM orders WHERE tenant_id = $1',
+      [tenant.id],
+    );
+    assert.deepEqual(orders.rows, [{
+      id: orderId, order_type: 'dine_in', status: 'received', payment_status: 'pending', total_cents: 3080, customer_phone: '', whatsapp_logs: [],
+    }]);
+    const outbox = await pool.query('SELECT 1 FROM outbox_events WHERE tenant_id = $1 AND aggregate_id = $2', [tenant.id, orderId]);
+    assert.equal(outbox.rowCount, 0);
+    const kitchen = await request<{ data: Array<{ id: string; type: string; status: string; items: Array<{ productName: string; totalCents: number }> }> }>(
+      `/api/v1/tenants/${tenant.slug}/orders`, owner,
+    );
+    assert.equal(kitchen.status, 200);
+    const order = kitchen.body.data.find(entry => entry.id === orderId);
+    assert.ok(order);
+    assert.equal(order.type, 'dine_in');
+    assert.equal(order.status, 'received');
+    assert.equal(order.items.length, 1);
+    assert.equal(order.items[0].productName, product.name);
+    assert.equal(order.items[0].totalCents, 3080);
   });
 
   await t.test('only the owner provisions Garçom accounts and revocation invalidates their sessions', async () => {

@@ -44,3 +44,31 @@ CREATE TABLE IF NOT EXISTS garcom_audit (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   FOREIGN KEY (tenant_id, tab_id) REFERENCES garcom_tabs(tenant_id, id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS garcom_tab_items (
+  id UUID PRIMARY KEY,
+  tenant_id VARCHAR(80) NOT NULL,
+  tab_id UUID NOT NULL,
+  snapshot JSONB NOT NULL,
+  tenant_slug VARCHAR(100) NOT NULL,
+  order_id VARCHAR(80),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  FOREIGN KEY (tenant_id, tenant_slug) REFERENCES tenants(id, slug) ON DELETE CASCADE,
+  FOREIGN KEY (order_id, tenant_slug) REFERENCES orders(id, tenant_slug) ON DELETE CASCADE,
+  FOREIGN KEY (tenant_id, tab_id) REFERENCES garcom_tabs(tenant_id, id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS garcom_tab_items_scope ON garcom_tab_items (tenant_id, tab_id, created_at, id);
+
+CREATE INDEX IF NOT EXISTS garcom_tab_items_order ON garcom_tab_items (order_id) WHERE order_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS garcom_tab_commands (
+  tenant_id VARCHAR(80) NOT NULL,
+  tab_id UUID NOT NULL,
+  actor_id VARCHAR(80) NOT NULL,
+  idempotency_key VARCHAR(80) NOT NULL,
+  request_hash TEXT NOT NULL,
+  result JSONB NOT NULL,
+  PRIMARY KEY (tenant_id, tab_id, actor_id, idempotency_key),
+  FOREIGN KEY (tenant_id, tab_id) REFERENCES garcom_tabs(tenant_id, id) ON DELETE CASCADE
+);
