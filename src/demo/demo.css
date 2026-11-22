@@ -28,7 +28,10 @@
   h2 { font-size: 1.25rem; font-weight: 800; letter-spacing: -.025em; }
   h3 { font-weight: 800; }
   .panel-intro h1 { margin-top: .65rem; }
-  .surface { min-width: 0; border-radius: 1rem; background: white; border: 1px solid #e2e8f0; padding: 1rem; box-shadow: 0 3px 12px #0f172a08; }
+  .surface { min-width: 0; border-radius: var(--radius-aladay-panel); background: var(--color-aladay-surface); border: 1px solid var(--color-aladay-line); padding: 1rem; box-shadow: var(--shadow-aladay-panel); }
+  .demo-guide { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: 1.25rem; }
+  .demo-guide li { padding: .4rem .65rem; border-radius: .5rem; background: #e2e8f0; color: #334155; font-size: .8rem; }
+  .demo-guide li[aria-current=step] { background: #1e3a8a; color: white; font-weight: 750; }
   .menu-grid, .dashboard-grid, .product-grid, .metrics { display: grid; gap: 1rem; align-items: start; }
   .product-grid { grid-auto-rows: 1fr; align-items: stretch; }
   .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 1rem; align-items: stretch; }

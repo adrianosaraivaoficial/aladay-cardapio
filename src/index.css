@@ -1,6 +1,12 @@
 @import "tailwindcss";
 
 @theme {
+  --color-aladay-brand: #2563eb;
+  --color-aladay-ink: #172554;
+  --color-aladay-line: #e2e8f0;
+  --color-aladay-surface: #ffffff;
+  --radius-aladay-panel: 1rem;
+  --shadow-aladay-panel: 0 3px 12px #0f172a0d;
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }

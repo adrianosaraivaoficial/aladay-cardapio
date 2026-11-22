@@ -183,13 +183,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     onNavigateToSetup();
   };
 
-  const handleDemo = (source: string) => {
-    trackConversionEvent('view_demo_menu', { source });
-    document.getElementById('demonstracao-celular')?.scrollIntoView({
-      behavior: reduceMotion ? 'auto' : 'smooth',
-    });
-  };
-
   const openSupportWhatsApp = () => {
     trackConversionEvent('click_whatsapp_contact', { source: 'landing_2_0' });
     const message = encodeURIComponent('Olá! Gostaria de conhecer a Aladay para digitalizar o meu restaurante.');
@@ -201,11 +194,13 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       <section className="relative min-h-[680px] overflow-hidden bg-slate-950 text-white lg:min-h-[720px]">
         <img
           src="/assets/landing/aladay-hero.webp"
+          srcSet="/assets/landing/aladay-hero-mobile.webp 800w, /assets/landing/aladay-hero.webp 1200w"
+          sizes="100vw"
           alt="Hambúrguer artesanal apresentado em ambiente de restaurante"
           className="absolute inset-0 h-full w-full object-cover object-center opacity-60"
           fetchPriority="high"
-          width={1920}
-          height={1080}
+          width={1200}
+          height={896}
           decoding="async"
         />
         <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,.98)_0%,rgba(2,6,23,.9)_45%,rgba(2,6,23,.3)_100%)]" />
@@ -217,19 +212,19 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               Tecnologia que trabalha com o seu restaurante
             </div>
             <h1 className="max-w-3xl text-4xl font-extrabold leading-[1.03] sm:text-5xl lg:text-[64px]">
-              Seu restaurante mais digital. Seus pedidos muito mais simples.
+              Do cardápio digital ao pedido pronto
             </h1>
             <p className="mt-6 max-w-2xl text-base leading-relaxed text-slate-200 sm:text-lg">
-              Modernize seu atendimento com cardápio digital, QR Code e pedidos pelo WhatsApp. Uma experiência prática para o seu restaurante e seus clientes.
+              Compartilhe seu cardápio por QR Code, receba pedidos pelo WhatsApp e acompanhe o preparo no painel do restaurante.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <button type="button" onClick={() => handleSignup('hero_primary')} className="group inline-flex min-h-12 items-center justify-center gap-2 bg-blue-600 px-6 py-3 text-sm font-bold text-white transition hover:bg-blue-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
                 Começar teste grátis
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
               </button>
-              <button type="button" onClick={() => handleDemo('hero_secondary')} className="inline-flex min-h-12 items-center justify-center gap-2 border border-white/25 bg-white/10 px-6 py-3 text-sm font-bold text-white backdrop-blur-md transition hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
-                <CirclePlay className="h-4 w-4" /> Ver como funciona
-              </button>
+              <a href="/demo" onClick={() => trackConversionEvent('view_demo_menu', { source: 'hero_secondary' })} className="inline-flex min-h-12 items-center justify-center gap-2 border border-white/25 bg-white/10 px-6 py-3 text-sm font-bold text-white backdrop-blur-md transition hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+                <CirclePlay className="h-4 w-4" aria-hidden="true" /> Abrir Demonstração Interativa
+              </a>
             </div>
             <div className="mt-8 flex flex-wrap gap-x-6 gap-y-3 text-xs font-semibold text-slate-300">
               <span className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" /> 15 dias grátis</span>

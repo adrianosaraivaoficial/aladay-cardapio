@@ -17,6 +17,13 @@ const prices = new Map(catalog.filter(product => product.available).map(product 
 const categories = ['Todos', ...new Set(catalog.map(product => product.category))];
 const menuPath = '/demo/cardapio';
 const panelPath = '/demo/painel';
+const guideSteps = ['Conheça o cardápio digital', 'Monte seu pedido', 'Simule o checkout', 'Veja o pedido recebido', 'Conheça os recursos de gestão'];
+
+function DemoGuide({ step }: { step: number }) {
+  return <ol className="demo-guide" aria-label="Etapas da demonstração">
+    {guideSteps.map((label, index) => <li key={label} aria-current={index + 1 === step ? 'step' : undefined}>{label}</li>)}
+  </ol>;
+}
 
 function Modal({ title, children, close }: { title: string; children: ReactNode; close: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -100,6 +107,7 @@ function DemoCatalog({ report }: { report: (error: unknown) => void }) {
       </div>
       <img src={catalog[0].image} alt="" fetchPriority="high" />
     </section>
+    <DemoGuide step={order ? 4 : checkout ? 3 : product || session.cart.length ? 2 : 1} />
     <div className="menu-grid">
       <section aria-labelledby="menu-title">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -216,6 +224,7 @@ function DemoDashboard({ report }: { report: (error: unknown) => void }) {
       <h1>Painel do restaurante</h1>
       <p>Restaurante Demonstração Aladay</p>
     </div>
+    <DemoGuide step={5} />
     <dl className="metrics">{metrics.map(([label, value]) => <div className="surface" key={label}>
       <dt>{label}</dt><dd>{value}</dd>
     </div>)}</dl>
@@ -249,7 +258,7 @@ function DemoLayout() {
   return <>
     <a className="skip" href="#demo-main">Pular para o conteúdo</a>
     <header className="demo-header">
-      <p className="notice">DEMONSTRAÇÃO — Nenhum pedido real será enviado.</p>
+      <p className="notice">Ambiente de demonstração — nenhum pedido ou pagamento real será realizado.</p>
       <div className="demo-container header-row">
         <a href="/" className="brand"><span aria-hidden="true">A</span>Aladay</a>
         <nav aria-label="Visões da demonstração">
@@ -263,7 +272,8 @@ function DemoLayout() {
       {status && <p className="feedback" role="status">{status}</p>}
       {panel ? <DemoDashboard report={report} /> : <DemoCatalog key={session.sessionId} report={report} />}
       <footer className="demo-footer">
-        <div><h2>Experimente a Aladay no seu restaurante</h2><p>Crie seu cardápio e configure seu painel.</p></div>
+        <div><h2>Gostou da experiência? Comece seu teste grátis.</h2></div>
+        <a href="/" className="secondary">Voltar ao site Aladay</a>
         <a href="/?teste-gratis=1" className="primary">Iniciar teste grátis <ArrowRight size={17} aria-hidden="true" /></a>
       </footer>
     </main>
