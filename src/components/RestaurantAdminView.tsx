@@ -523,7 +523,7 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
       );
     } else {
       setStatusUpdateToast(
-        `Status do Pedido #${order.orderNumber} alterado para "${nextStatus}". Notificação disparada no WhatsApp de ${order.customerName} via Evolution API!`
+        `Status do Pedido #${order.orderNumber} alterado para "${nextStatus}".${order.customerPhone ? ' Notificação registrada para envio por WhatsApp.' : ''}`
       );
     }
     setTimeout(() => setStatusUpdateToast(null), 5000);

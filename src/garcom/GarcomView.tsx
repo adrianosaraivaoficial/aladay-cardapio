@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronRight, CircleAlert, ClipboardList, RefreshCw, Utensils, WifiOff } from 'lucide-react';
 import type { AuthSession } from '../types';
+import { GarcomTabItems, type PendingTabOperation } from './GarcomTabItems';
 import './garcom.css';
 
 type GarcomRole = 'owner' | 'waiter' | 'manager' | 'kitchen' | 'cashier';
@@ -35,6 +36,7 @@ function GarcomFloor({ authSession }: { authSession: AuthSession }) {
   const { token, user } = authSession;
   const basePath = `/api/v1/tenants/${encodeURIComponent(user.tenantSlug)}/garcom`;
   const [floor, setFloor] = useState<Floor>();
+  const [floorVersion, setFloorVersion] = useState(0);
   const [selectedNumber, setSelectedNumber] = useState<number>();
   const [online, setOnline] = useState(() => navigator.onLine);
   const [loading, setLoading] = useState(false);
@@ -45,6 +47,7 @@ function GarcomFloor({ authSession }: { authSession: AuthSession }) {
   const request = useRef<AbortController | undefined>(undefined);
   const submit = useRef<AbortController | undefined>(undefined);
   const keys = useRef(new Map<number, string>());
+  const pendingOperations = useRef(new Map<string, PendingTabOperation>());
   const detailsHeading = useRef<HTMLHeadingElement>(null);
 
   const refresh = useCallback(async () => {
@@ -76,6 +79,7 @@ function GarcomFloor({ authSession }: { authSession: AuthSession }) {
       if (controller.signal.aborted) return;
       if (!Array.isArray(result.data?.tables)) throw new Error('Resposta de mesas inválida');
       setFloor(result.data);
+      setFloorVersion(version => version + 1);
     } catch {
       if (!controller.signal.aborted) setReadError('Não foi possível atualizar as mesas. Tente novamente.');
     } finally {
@@ -223,10 +227,14 @@ function GarcomFloor({ authSession }: { authSession: AuthSession }) {
                 {actionError && <p className="garcom-notice" role="alert"><CircleAlert size={18} aria-hidden="true" /> {actionError}</p>}
                 {feedback && <p className="garcom-notice garcom-success" role="status">{feedback}</p>}
                 {selected.tab ? (
-                  <dl className="garcom-tab-detail">
-                    <div><dt>Comanda</dt><dd>{selected.tab.id}</dd></div>
-                    <div><dt>Abertura</dt><dd><time dateTime={selected.tab.openedAt}>{formatOpenedAt(selected.tab.openedAt)}</time></dd></div>
-                  </dl>
+                  <>
+                    <dl className="garcom-tab-detail">
+                      <div><dt>Comanda</dt><dd>{selected.tab.id}</dd></div>
+                      <div><dt>Abertura</dt><dd><time dateTime={selected.tab.openedAt}>{formatOpenedAt(selected.tab.openedAt)}</time></dd></div>
+                    </dl>
+                    <GarcomTabItems key={selected.tab.id} tabId={selected.tab.id} basePath={basePath} token={token}
+                      canEdit={canOpen} online={online} floorVersion={floorVersion} pendingOperations={pendingOperations.current} />
+                  </>
                 ) : (
                   <>
                     <p className="garcom-muted">Mesa livre.</p>

@@ -7,4 +7,6 @@
 5. Sem rede, aguarde a reconexão. A tela atualiza e não coloca pedidos ou aberturas em fila.
 6. Em navegador compatível, use o menu do navegador para instalar o PWA. Para sair, use **Sair** com conexão disponível para revogação no servidor.
 
-Não usar esta etapa para lançar produtos, enviar pedidos ao KDS ou encerrar contas. São incrementos posteriores.
+Com a comanda aberta, escolha um produto do catálogo, preencha a quantidade e os adicionais obrigatórios e, se necessário, informe observações. O total confirmado vem do servidor. Use **Enviar à cozinha** para publicar a rodada após revisar os itens. Atualize o salão para ver o status no KDS.
+
+Se perder a resposta, use **Confirmar solicitação pendente** para repetir a operação. A conta permanece aberta. Este recorte não registra pagamentos nem encerra a comanda.

@@ -4,4 +4,6 @@ O PWA em `/app/garcom/` reutiliza o login da Aladay. Sua entrada lazy preserva a
 
 O PostgreSQL é autoritativo para flag, vínculos, ocupação, idempotência e auditoria. A API revalida o tenant e o vínculo por operação. A tela atualiza ao reconectar e após conflito. Não existe fila offline nesta versão.
 
-O primeiro recorte da interface abre e mostra comandas. Entrada de itens, envio à cozinha e fechamento ainda não estão disponíveis nesta branch. Nenhum pedido financeiro ou evento de cozinha é emitido ao abrir a mesa.
+A comanda usa a mesma validação de preço e adicional do checkout, em `backend/order-items.ts`. O pedido consome snapshots de itens, usa a mesma coordenação de numeração do tenant e é salvo em `orders` como `dine_in`. O KDS lê essa tabela pelo fluxo existente. O Garçom consulta o estado de cada pedido ao atualizar o salão ou reconectar.
+
+A associação dos itens ao pedido, a versão da comanda, o resultado idempotente e a auditoria são gravados juntos. O Garçom não solicita contato do cliente. As rodadas sem telefone não são encaminhadas à automação de WhatsApp. O fechamento financeiro ainda não está implementado.
