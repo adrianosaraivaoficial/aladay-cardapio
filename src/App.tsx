@@ -399,6 +399,7 @@ function resolvePublicStoreSlugFromLocation(): string | null {
     }
     const reservedPaths = new Set([
       'index.html',
+      'demo',
       'admin',
       'login',
       'auth',
@@ -433,9 +434,12 @@ export default function App() {
     resolvePublicStoreSlugFromLocation()
   );
 
-  const [currentView, setCurrentView] = useState<'home' | 'kickoff' | 'consumer' | 'admin' | 'calculator' | 'diagrams' | 'tracking' | 'whatsapp' | 'auth' | 'terms' | 'privacy' | 'feedback'>(() =>
-    feedbackToken !== null ? 'feedback' : resolvePublicStoreSlugFromLocation() ? 'consumer' : 'home'
-  );
+  const [currentView, setCurrentView] = useState<'home' | 'kickoff' | 'consumer' | 'admin' | 'calculator' | 'diagrams' | 'tracking' | 'whatsapp' | 'auth' | 'terms' | 'privacy' | 'feedback'>(() => {
+    if (feedbackToken !== null) return 'feedback';
+    if (resolvePublicStoreSlugFromLocation()) return 'consumer';
+    const trialLink = window.location.pathname === '/' && new URLSearchParams(window.location.search).get('teste-gratis') === '1';
+    return trialLink ? 'kickoff' : 'home';
+  });
   const [publicCatalogState, setPublicCatalogState] = useState<{slug:string;status:'loading'|'ready'|'error'}>({slug:'',status:'loading'});
   const [selectedTrackingOrder, setSelectedTrackingOrder] = useState<Order | null>(null);
   const [showSubscriptionNoticeModal, setShowSubscriptionNoticeModal] = useState<boolean>(false);
@@ -2260,7 +2264,6 @@ export default function App() {
               setKickoffSessionKey(Date.now());
               handleNavigateSafely('kickoff');
             }}
-            onNavigateToDemoMenu={() => handleNavigateSafely('consumer')}
             onNavigateToAdmin={() => handleNavigateSafely('admin')}
             onNavigateToTerms={() => {
               setCurrentView('terms');

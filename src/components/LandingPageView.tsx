@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import {
   ArrowRight, BarChart3, Check, ChevronDown, ChevronLeft, ChevronRight,
-  CirclePlay, ExternalLink, LayoutDashboard, MenuSquare, MessageCircle,
+  CirclePlay, LayoutDashboard, MenuSquare, MessageCircle,
   Play, QrCode, ScanLine, ShieldCheck, Smartphone, Sparkles, Upload, X,
 } from 'lucide-react';
 import { AuthSession, RestaurantTenant } from '../types';
@@ -15,7 +15,6 @@ interface LandingPageViewProps {
   authSession: AuthSession | null;
   onNavigateToLogin: () => void;
   onNavigateToSetup: () => void;
-  onNavigateToDemoMenu: () => void;
   onNavigateToAdmin: () => void;
   onNavigateToTerms?: () => void;
   onNavigateToPrivacy?: () => void;
@@ -132,7 +131,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   authSession,
   onNavigateToLogin,
   onNavigateToSetup,
-  onNavigateToDemoMenu,
   onNavigateToAdmin,
   onNavigateToTerms,
   onNavigateToPrivacy,
@@ -293,13 +291,13 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         <div className="mx-auto max-w-7xl">
           <FadeIn className="flex flex-col justify-between gap-8 lg:flex-row lg:items-end">
             <div className="max-w-3xl">
-              <p className="text-xs font-extrabold uppercase text-sky-400">Produto real, em contexto</p>
+              <p className="text-xs font-extrabold uppercase text-sky-400">Do cardápio ao painel</p>
               <h2 className="mt-4 text-3xl font-extrabold sm:text-5xl">Veja a Aladay em ação.</h2>
-              <p className="mt-5 max-w-2xl text-base leading-relaxed text-slate-400">Explore capturas reais do cardápio e do painel. Cada tela abaixo vem do produto atual, sem promessas ilustrativas.</p>
+              <p className="mt-5 max-w-2xl text-base leading-relaxed text-slate-400">Monte um pedido em um cardápio fictício e acompanhe o preparo no painel. Nas capturas abaixo, conheça as telas que você usará no seu restaurante.</p>
             </div>
-            <button type="button" onClick={onNavigateToDemoMenu} className="inline-flex min-h-11 items-center justify-center gap-2 border border-white/20 px-5 py-3 text-sm font-bold transition hover:bg-white hover:text-slate-950">
-              Abrir demonstração interativa <ExternalLink className="h-4 w-4" />
-            </button>
+            <a href="/demo" onClick={() => trackConversionEvent('view_demo_menu', { source: 'interactive_demo_cta' })} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold transition hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+              Abrir Demonstração Interativa <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </a>
           </FadeIn>
           <div className="mt-12 grid gap-10 lg:grid-cols-[.76fr_1.24fr] lg:items-center">
             <div className="space-y-2" role="tablist" aria-label="Telas da Aladay">

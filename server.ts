@@ -3,6 +3,7 @@ dotenv.config();
 
 import express, { Request, Response } from 'express';
 import { createServer as createViteServer } from 'vite';
+import { demoPath } from './demo-routes.ts';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
@@ -6433,6 +6434,12 @@ async function startServer() {
         })
       );
     }
+
+    app.get([demoPath, '/demo.html'], (_req: Request, res: Response) => {
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+      res.sendFile(path.join(distPath, 'demo.html'));
+    });
 
     // 2. Servir a raiz do dist (favicons, robots, manifest, etc.)
     app.use(
