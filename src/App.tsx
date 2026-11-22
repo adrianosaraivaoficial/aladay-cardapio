@@ -1214,22 +1214,23 @@ export default function App() {
 
   // Sincroniza pedidos em tempo real do servidor para o Painel & KDS do restaurante (para que novos pedidos feitos no celular dos clientes apareçam imediatamente no KDS)
   React.useEffect(() => {
-    if (!tenant?.slug) return;
-    let isMounted = true;
+    const token = authSession?.token;
+    if (!tenant?.slug || !token) return;
+    const controller = new AbortController();
+    let syncing = false;
 
     const syncOrdersFromServer = async () => {
+      if (syncing) return;
+      syncing = true;
       try {
-        const headers: Record<string, string> = {};
-        if (authSession?.token) {
-          headers['Authorization'] = `Bearer ${authSession.token}`;
-        }
         const res = await fetch(`/api/v1/tenants/${encodeURIComponent(tenant.slug)}/orders`, {
-          headers,
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
         });
         if (!res.ok) return;
         const json = await res.json();
         const serverOrders: Order[] = Array.isArray(json?.data) ? json.data : [];
-        if (!isMounted || serverOrders.length === 0) return;
+        if (controller.signal.aborted || serverOrders.length === 0) return;
 
         setCatalogsByTenant((prev) => {
           const existing = prev[tenant.slug] || defaultNormalizedCatalog;
@@ -1270,14 +1271,16 @@ export default function App() {
           };
         });
       } catch {
-        // Ignore transient network errors
+        // The next poll retries transient network errors.
+      } finally {
+        syncing = false;
       }
     };
 
     syncOrdersFromServer();
     const pollInterval = setInterval(syncOrdersFromServer, 3500);
     return () => {
-      isMounted = false;
+      controller.abort();
       clearInterval(pollInterval);
     };
   }, [tenant.slug, authSession?.token, defaultNormalizedCatalog]);

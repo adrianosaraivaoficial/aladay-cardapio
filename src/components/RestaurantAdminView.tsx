@@ -3548,13 +3548,14 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
           <div className="space-y-4">
             {/* Status Update Live Toast */}
             {statusUpdateToast && (
-              <div className="bg-emerald-950 text-white p-3.5 rounded-xl border border-emerald-700 shadow-md flex items-center justify-between text-xs animate-in fade-in">
+              <div role="status" className="bg-emerald-950 text-white p-3.5 rounded-xl border border-emerald-700 shadow-md flex items-center justify-between text-xs animate-in fade-in">
                 <div className="flex items-center gap-2.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
                   <span className="font-medium">{statusUpdateToast}</span>
                 </div>
                 <button
                   type="button"
+                  aria-label="Dispensar aviso de atualização"
                   onClick={() => setStatusUpdateToast(null)}
                   className="text-emerald-300 hover:text-white"
                 >
@@ -3564,13 +3565,13 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
             )}
 
             {/* Explanatory Header & SLA Color Legend */}
-            <div className="bg-white border border-neutral-200 rounded-xl p-4 space-y-3 shadow-2xs">
+            <section aria-labelledby="kds-title" className="bg-aladay-surface border border-aladay-line rounded-aladay-panel p-4 sm:p-5 space-y-3 shadow-aladay-panel">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-bold text-neutral-900 flex items-center gap-2">
+                  <h2 id="kds-title" className="text-lg font-extrabold text-aladay-ink flex items-center gap-2">
                     <LayoutGrid className="w-4 h-4 text-orange-600" />
-                    <span>Quadro KDS em Tempo Real com Contador de Tempo &amp; Notificação WhatsApp</span>
-                  </h3>
+                    <span>Pedidos da cozinha</span>
+                  </h2>
                   <p className="text-xs text-neutral-500 mt-0.5">
                     {isSuperAdmin ? (
                       <>
@@ -3594,7 +3595,7 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
                     </button>
                   )}
                   <span className="text-xs text-neutral-500 font-mono bg-neutral-100 px-2.5 py-1.5 rounded-lg">
-                    {orders.length} pedidos hoje
+                    {orders.length} pedidos carregados
                   </span>
                 </div>
               </div>
@@ -3620,11 +3621,11 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
                   </span>
                 </div>
               </div>
-            </div>
+            </section>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
               {/* Recebidos */}
-              <div className="bg-white border border-neutral-200 rounded-xl p-3 flex flex-col h-[540px] shadow-2xs">
+              <div className="bg-aladay-surface border border-aladay-line rounded-aladay-panel p-3 flex flex-col max-h-[540px] md:h-[540px] shadow-aladay-panel">
                 <div className="flex items-center justify-between pb-2 border-b border-neutral-200 mb-3">
                   <span className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
@@ -3795,13 +3796,13 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
                     );
                   })}
                   {ordersByStatus.received.length === 0 && (
-                    <p className="text-xs text-neutral-400 text-center pt-10">Nenhum pedido pendente.</p>
+                    <p className="text-xs text-neutral-600 text-center py-5 md:pt-10">Nenhum pedido pendente.</p>
                   )}
                 </div>
               </div>
 
               {/* Em Preparo */}
-              <div className="bg-white border border-neutral-200 rounded-xl p-3 flex flex-col h-[540px] shadow-2xs">
+              <div className="bg-aladay-surface border border-aladay-line rounded-aladay-panel p-3 flex flex-col max-h-[540px] md:h-[540px] shadow-aladay-panel">
                 <div className="flex items-center justify-between pb-2 border-b border-neutral-200 mb-3">
                   <span className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
@@ -3897,13 +3898,13 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
                     );
                   })}
                   {ordersByStatus.confirmed.length + ordersByStatus.preparing.length === 0 && (
-                    <p className="text-xs text-neutral-400 text-center pt-10">Cozinha liberada.</p>
+                    <p className="text-xs text-neutral-600 text-center py-5 md:pt-10">Cozinha liberada.</p>
                   )}
                 </div>
               </div>
 
               {/* Prontos */}
-              <div className="bg-white border border-neutral-200 rounded-xl p-3 flex flex-col h-[540px] shadow-2xs">
+              <div className="bg-aladay-surface border border-aladay-line rounded-aladay-panel p-3 flex flex-col max-h-[540px] md:h-[540px] shadow-aladay-panel">
                 <div className="flex items-center justify-between pb-2 border-b border-neutral-200 mb-3">
                   <span className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
@@ -4026,13 +4027,13 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
                     );
                   })}
                   {ordersByStatus.ready.length === 0 && (
-                    <p className="text-xs text-neutral-400 text-center pt-10">Nenhum pedido aguardando saída.</p>
+                    <p className="text-xs text-neutral-600 text-center py-5 md:pt-10">Nenhum pedido aguardando saída.</p>
                   )}
                 </div>
               </div>
 
               {/* Concluídos */}
-              <div className="bg-white border border-neutral-200 rounded-xl p-3 flex flex-col h-[540px] shadow-2xs">
+              <div className="bg-aladay-surface border border-aladay-line rounded-aladay-panel p-3 flex flex-col max-h-[540px] md:h-[540px] shadow-aladay-panel">
                 <div className="flex items-center justify-between pb-2 border-b border-neutral-200 mb-3">
                   <span className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
@@ -4084,7 +4085,7 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
                     );
                   })}
                   {ordersByStatus.delivered.length === 0 && (
-                    <p className="text-xs text-neutral-400 text-center pt-10">Nenhum pedido finalizado ainda.</p>
+                    <p className="text-xs text-neutral-600 text-center py-5 md:pt-10">Nenhum pedido finalizado ainda.</p>
                   )}
                 </div>
               </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useId, useRef } from 'react';
 import {
   QrCode,
   Copy,
@@ -36,12 +36,15 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
   const [transaction, setTransaction] = useState<PixTransaction | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [chargeError, setChargeError] = useState('');
-  const [copiedCode, setCopiedCode] = useState(false);
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const [chargeAttempt, setChargeAttempt] = useState(0);
+  const copyField = useRef<HTMLInputElement>(null);
+  const copyFieldId = useId();
   const [isSimulatingPayment, setIsSimulatingPayment] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'approved' | 'expired'>('pending');
   const [timeLeftSeconds, setTimeLeftSeconds] = useState(15 * 60); // 15 minutes
   const [approvedOrder, setApprovedOrder] = useState<Order>(order);
-  const [localQrDataUrl, setLocalQrDataUrl] = useState<string>('');
+  const [qr, setQr] = useState<{ payload: string; url: string | null }>();
 
   const pollIntervalRef = useRef<any>(null);
 
@@ -54,7 +57,9 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
     let isMounted = true;
     setIsLoading(true);
     setTransaction(null);
-    setLocalQrDataUrl('');
+    setQr(undefined);
+    setCopyState('idle');
+    setTimeLeftSeconds(15 * 60);
     setChargeError('');
     setPaymentStatus('pending');
 
@@ -70,6 +75,9 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
 
         const json = await res.json();
         if (!res.ok) throw new Error(json.error || 'Não foi possível obter a cobrança Pix.');
+        if (!json.data || (json.data.status !== 'PAID' && !json.data.pixCopiaECola)) {
+          throw new Error('A cobrança não retornou um código Pix. Tente carregar novamente.');
+        }
         if (res.ok) {
           if (isMounted && json.data) {
             setTransaction(json.data);
@@ -102,6 +110,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
     tenantPix.beneficiaryName,
     tenantPix.merchantNameEmv,
     tenantPix.merchantCityEmv,
+    chargeAttempt,
   ]);
 
   // Polling listener to detect webhook confirmation
@@ -164,9 +173,9 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
     let active = true;
     QRCode.toDataURL(pixPayload, { width: 260, margin: 2 })
       .then((url) => {
-        if (active) setLocalQrDataUrl(url);
+        if (active) setQr({ payload: pixPayload, url });
       })
-      .catch(() => {});
+      .catch(() => { if (active) setQr({ payload: pixPayload, url: null }); });
     return () => {
       active = false;
     };
@@ -182,18 +191,19 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
 
   const formattedAmount = `R$ ${(order.totalCents / 100).toFixed(2).replace('.', ',')}`;
 
-  const qrCodeUrl = localQrDataUrl;
+  const qrForCharge = qr?.payload === pixPayload ? qr : undefined;
+  const qrCodeUrl = qrForCharge?.url;
+  const qrLoading = isLoading || (!!pixPayload && !qrForCharge);
 
   const handleCopyCode = async () => {
     try {
       if (!pixPayload) return;
       await navigator.clipboard.writeText(pixPayload);
-      setCopiedCode(true);
-      setTimeout(() => setCopiedCode(false), 3000);
+      setCopyState('copied');
     } catch {
-      // Fallback
-      setCopiedCode(true);
-      setTimeout(() => setCopiedCode(false), 3000);
+      setCopyState('failed');
+      copyField.current?.focus();
+      copyField.current?.select();
     }
   };
 
@@ -257,7 +267,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
                   {formattedAmount} Confirmado!
                 </h4>
                 <p className="text-xs text-neutral-600 max-w-xs mx-auto mt-1 leading-relaxed">
-                  O pedido <strong>#{approvedOrder.orderNumber}</strong> foi enviado e já está em preparo no {tenant.name}!
+                  Acompanhe o status do pedido <strong>#{approvedOrder.orderNumber}</strong> no {tenant.name}.
                 </p>
               </div>
 
@@ -367,8 +377,8 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
               {chargeError && <p role="alert" className="text-sm text-rose-700">{chargeError}</p>}
               {/* QR Code Container */}
               <div className="bg-neutral-50 p-4 rounded-2xl border border-neutral-200 flex flex-col items-center justify-center relative">
-                {isLoading && !qrCodeUrl ? (
-                  <div className="w-48 h-48 flex flex-col items-center justify-center gap-2 text-neutral-400">
+                {qrLoading ? (
+                  <div role="status" className="w-48 h-48 flex flex-col items-center justify-center gap-2 text-neutral-600">
                     <RefreshCw className="w-6 h-6 animate-spin text-emerald-600" />
                     <span className="text-xs">Gerando QR Code Pix...</span>
                   </div>
@@ -380,33 +390,37 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
                       className="w-48 h-48 rounded-lg object-contain"
                     />
                   </div>
-                ) : <p className="text-sm text-neutral-600">Cobrança indisponível.</p>}
-
-                <div className="mt-3 flex items-center gap-2 text-[11px] text-neutral-600">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>Abra o app do seu banco e escaneie o QR Code acima</span>
-                </div>
+                ) : pixPayload ? (
+                  <p role="status" className="text-sm text-neutral-700">QR Code indisponível. Use o código Pix Copia e Cola abaixo.</p>
+                ) : (
+                  <button type="button" className="min-h-11 rounded-lg border px-4 text-sm font-semibold" onClick={() => setChargeAttempt(value => value + 1)}>
+                    Tentar carregar cobrança
+                  </button>
+                )}
+                {qrCodeUrl && <p className="mt-3 text-xs text-neutral-600">Abra o app do seu banco e escaneie o QR Code.</p>}
               </div>
 
               {/* Pix Copia e Cola field */}
-              <div className="space-y-1.5">
-                <label className="block text-[11px] font-bold text-neutral-700">
-                  Ou copie o código Pix Copia e Cola:
+              {pixPayload && <div className="space-y-1.5">
+                <label htmlFor={copyFieldId} className="block text-[11px] font-bold text-neutral-700">
+                  Código Pix Copia e Cola
                 </label>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     readOnly
                     value={pixPayload}
-                    onClick={handleCopyCode}
-                    className="flex-1 p-2 bg-neutral-100 border border-neutral-300 rounded-lg text-[11px] font-mono text-neutral-700 truncate cursor-pointer focus:outline-none"
+                    id={copyFieldId}
+                    ref={copyField}
+                    onFocus={event => event.currentTarget.select()}
+                    className="min-w-0 flex-1 p-2 bg-neutral-100 border border-neutral-300 rounded-lg text-[11px] font-mono text-neutral-700 truncate cursor-pointer focus:outline-none"
                   />
                   <button
                     type="button"
                     onClick={handleCopyCode}
                     className="px-3.5 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shrink-0 shadow-xs cursor-pointer"
                   >
-                    {copiedCode ? (
+                    {copyState === 'copied' ? (
                       <>
                         <Check className="w-3.5 h-3.5 text-emerald-400" />
                         <span>Copiado!</span>
@@ -419,14 +433,17 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
                     )}
                   </button>
                 </div>
-              </div>
+                <p role="status" className={copyState === 'failed' ? 'text-xs text-rose-700' : 'sr-only'}>
+                  {copyState === 'failed' ? 'O navegador bloqueou a cópia. Copie o código selecionado manualmente.' : copyState === 'copied' ? 'Código copiado.' : ''}
+                </p>
+              </div>}
 
               {/* Customer Confirmation Action */}
               <div className="pt-1 space-y-2">
                 <button
                   type="button"
                   onClick={handleConfirmPixPaid}
-                  disabled={isSimulatingPayment}
+                  disabled={isSimulatingPayment || !transaction?.txid}
                   className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-50"
                 >
                   {isSimulatingPayment ? (

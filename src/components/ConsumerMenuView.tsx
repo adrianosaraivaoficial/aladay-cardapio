@@ -194,6 +194,7 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
   const [activePixOrder, setActivePixOrder] = useState<Order | null>(null);
   // Confirmation view state
   const [lastPlacedOrder, setLastPlacedOrder] = useState<Order | null>(null);
+  const checkoutInFlight = useRef(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [showThermalModal, setShowThermalModal] = useState<boolean>(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
@@ -625,7 +626,7 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
   const handleCheckoutSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setCheckoutError(null);
-    if (cartItems.length === 0) return;
+    if (checkoutInFlight.current || cartItems.length === 0) return;
     if (!customerName.trim()) {
       setCheckoutError('Por favor, informe seu nome para identificação do pedido.');
       return;
@@ -660,6 +661,7 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
       // ignore storage errors
     }
 
+    checkoutInFlight.current = true;
     setIsSubmitting(true);
 
     const orderNumber = Math.floor(1043 + Math.random() * 8900);
@@ -737,7 +739,6 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
       const json = await response.json().catch(() => null);
       if (!response.ok || !json?.data) {
         setCheckoutError(json?.error || 'Não foi possível registrar o pedido. Revise os dados e tente novamente.');
-        setIsSubmitting(false);
         return;
       }
       finalOrder = {
@@ -746,9 +747,11 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
       };
       attempt.complete();
     } catch {
-      setCheckoutError('Sem conexão com o restaurante. O pedido não foi enviado; tente novamente.');
-      setIsSubmitting(false);
+      setCheckoutError('Não foi possível confirmar o recebimento. Tente novamente com os mesmos itens e dados do pedido.');
       return;
+    } finally {
+      checkoutInFlight.current = false;
+      setIsSubmitting(false);
     }
 
     onOrderCreated(finalOrder);
@@ -757,7 +760,6 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
     upsellAttributions.current = []; resetUpsellCheckout(tenant.slug);
     setCashChangeFor('');
     setCartStep('bag');
-    setIsSubmitting(false);
     setIsCartOpen(false);
 
     if (isPixDynamic) {
@@ -1260,6 +1262,7 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                aria-label="Buscar no cardápio"
                 placeholder="Buscar prato, bebida ou ingrediente..."
                 className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-neutral-200 rounded-lg text-neutral-800 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-400"
               />
@@ -1354,7 +1357,7 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
                   <div
                     key={product.id}
                     onClick={() => handleOpenProduct(product)}
-                    className={`p-3 border rounded-xl transition-all flex gap-3 cursor-pointer bg-white group relative ${
+                    className={`p-3 sm:p-4 border rounded-aladay-panel transition-colors flex gap-3 cursor-pointer bg-aladay-surface group relative ${
                       qtyInCart > 0
                         ? 'border-emerald-500/70 bg-emerald-50/15 shadow-2xs'
                         : 'border-neutral-200 hover:border-neutral-300'
@@ -1390,7 +1393,7 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
                     <div className="flex-1 flex flex-col justify-between min-w-0">
                       <div>
                         <div className="flex items-start justify-between gap-2">
-                          <h3 className="text-xs font-bold text-neutral-900 leading-snug group-hover:text-blue-600 transition-colors">
+                          <h3 className="text-sm font-bold text-neutral-900 leading-snug group-hover:text-aladay-brand transition-colors">
                             {product.name}
                           </h3>
                         </div>
