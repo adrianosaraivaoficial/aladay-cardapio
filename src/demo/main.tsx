@@ -245,10 +245,12 @@ function DemoDashboard({ report }: { report: (error: unknown) => void }) {
   const session = useDemoSession();
   const { orders } = session;
   const selected = orders.find(order => order.id === session.selectedOrderId) ?? orders[0];
+  const orderTotal = orders.reduce((sum, order) => sum + order.total, 0);
   const metrics = [
     ['Pedidos da sessão', orders.length],
     ...(['RECEBIDO', 'EM_PREPARO', 'PRONTO', 'CONCLUIDO'] as const).map(status => [statusLabel[status], orders.filter(order => order.status === status).length]),
-    ['Valor total simulado', formatPrice(orders.reduce((sum, order) => sum + order.total, 0))],
+    ['Valor total simulado', formatPrice(orderTotal)],
+    ['Ticket médio simulado', orders.length ? formatPrice(Math.round(orderTotal / orders.length)) : '—'],
   ];
   return <>
     <div className="panel-intro">
@@ -277,6 +279,23 @@ function DemoDashboard({ report }: { report: (error: unknown) => void }) {
       <p className="my-3 text-slate-600">Finalize um pedido no cardápio para acompanhar o preparo aqui.</p>
       <a className="primary" href={menuPath}>Abrir cardápio <ArrowRight size={17} aria-hidden="true" /></a>
     </section>}
+    <section className="surface mt-4" aria-labelledby="demo-catalog-overview">
+      <h2 id="demo-catalog-overview">Produtos e categorias da demonstração</h2>
+      <ul className="mt-3 grid gap-3 sm:grid-cols-2">
+        {categories.filter(category => category !== 'Todos').map(category => (
+          <li key={category} className="rounded-lg border border-aladay-line p-3">
+            <h3>{category}</h3>
+            <ul className="mt-1 space-y-1 text-sm text-slate-600">
+              {catalog.filter(product => product.category === category).map(product => (
+                <li key={product.id} className="flex flex-wrap justify-between gap-x-3">
+                  <span>{product.name}</span><span>{formatPrice(product.price)}</span>
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+    </section>
   </>;
 }
 

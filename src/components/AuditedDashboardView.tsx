@@ -860,11 +860,11 @@ export const AuditedDashboardView: React.FC<AuditedDashboardViewProps> = ({
       </div>
 
       {/* 4 Core Audited KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-4 gap-4">
         {/* KPI 1: Vendas Concluídas */}
-        <div className="bg-white border border-neutral-200 rounded-xl p-4 shadow-2xs hover:border-neutral-300 transition-colors">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-neutral-500 flex items-center gap-1.5">
+        <div className="min-w-0 rounded-aladay-panel border border-aladay-line bg-aladay-surface p-4 shadow-aladay-panel">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4 text-emerald-600" />
               Vendas Concluídas
             </span>
@@ -873,16 +873,16 @@ export const AuditedDashboardView: React.FC<AuditedDashboardViewProps> = ({
             </span>
           </div>
 
-          <p className="text-2xl font-bold font-mono text-neutral-900 mt-2 tabular-nums">
+          <p className="break-words text-2xl font-extrabold tracking-tight text-aladay-ink mt-2 tabular-nums">
             {formatBRL(auditMetrics.totalConcludedRevenueCents)}
           </p>
 
           <div className="mt-2 pt-2 border-t border-neutral-100 text-[11px] text-neutral-600 space-y-0.5">
-            <div className="flex justify-between">
+            <div className="flex flex-wrap justify-between gap-x-2">
               <span>Pratos &amp; Bebidas:</span>
               <span className="font-mono">{formatBRL(auditMetrics.concludedItemsSubtotalCents)}</span>
             </div>
-            <div className="flex justify-between">
+            <div className="flex flex-wrap justify-between gap-x-2">
               <span>Fretes Realizados:</span>
               <span className="font-mono">{formatBRL(auditMetrics.concludedDeliveryFeesCents)}</span>
             </div>
@@ -890,9 +890,9 @@ export const AuditedDashboardView: React.FC<AuditedDashboardViewProps> = ({
         </div>
 
         {/* KPI 2: Ticket Médio Auditado */}
-        <div className="bg-white border border-neutral-200 rounded-xl p-4 shadow-2xs hover:border-neutral-300 transition-colors">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-neutral-500 flex items-center gap-1.5">
+        <div className="min-w-0 rounded-aladay-panel border border-aladay-line bg-aladay-surface p-4 shadow-aladay-panel">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
               <Receipt className="w-4 h-4 text-blue-600" />
               Ticket Médio
             </span>
@@ -901,16 +901,16 @@ export const AuditedDashboardView: React.FC<AuditedDashboardViewProps> = ({
             </span>
           </div>
 
-          <p className="text-2xl font-bold font-mono text-neutral-900 mt-2 tabular-nums">
+          <p className="break-words text-2xl font-extrabold tracking-tight text-aladay-ink mt-2 tabular-nums">
             {formatBRL(auditMetrics.averageTicketCents)}
           </p>
 
           <div className="mt-2 pt-2 border-t border-neutral-100 text-[11px] text-neutral-600 space-y-0.5">
-            <div className="flex justify-between">
+            <div className="flex flex-wrap justify-between gap-x-2">
               <span>Fórmula:</span>
               <span className="font-mono font-medium text-neutral-800">Σ Vendas ÷ N Entregues</span>
             </div>
-            <div className="flex justify-between">
+            <div className="flex flex-wrap justify-between gap-x-2">
               <span>Itens por pedido:</span>
               <span className="font-mono">{auditMetrics.avgItemsPerOrder} itens</span>
             </div>
@@ -918,9 +918,9 @@ export const AuditedDashboardView: React.FC<AuditedDashboardViewProps> = ({
         </div>
 
         {/* KPI 3: Pedidos em Andamento */}
-        <div className="bg-white border border-neutral-200 rounded-xl p-4 shadow-2xs hover:border-neutral-300 transition-colors">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-neutral-500 flex items-center gap-1.5">
+        <div className="min-w-0 rounded-aladay-panel border border-aladay-line bg-aladay-surface p-4 shadow-aladay-panel">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
               <Clock className="w-4 h-4 text-amber-600" />
               Pipeline em Andamento
             </span>
@@ -929,16 +929,16 @@ export const AuditedDashboardView: React.FC<AuditedDashboardViewProps> = ({
             </span>
           </div>
 
-          <p className="text-2xl font-bold font-mono text-neutral-900 mt-2 tabular-nums">
+          <p className="break-words text-2xl font-extrabold tracking-tight text-aladay-ink mt-2 tabular-nums">
             {formatBRL(auditMetrics.inProgressProjectedRevenueCents)}
           </p>
 
           <div className="mt-2 pt-2 border-t border-neutral-100 text-[11px] text-neutral-600 space-y-0.5">
-            <div className="flex justify-between">
+            <div className="flex flex-wrap justify-between gap-x-2">
               <span>Status KDS:</span>
               <span className="text-amber-800 font-medium">Na cozinha / Expedição</span>
             </div>
-            <div className="flex justify-between">
+            <div className="flex flex-wrap justify-between gap-x-2">
               <span>Impacto:</span>
               <span className="text-neutral-500">Aguardando entrega</span>
             </div>
@@ -946,9 +946,9 @@ export const AuditedDashboardView: React.FC<AuditedDashboardViewProps> = ({
         </div>
 
         {/* KPI 4: Cancelamentos & Retenção */}
-        <div className="bg-white border border-neutral-200 rounded-xl p-4 shadow-2xs hover:border-neutral-300 transition-colors">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-neutral-500 flex items-center gap-1.5">
+        <div className="min-w-0 rounded-aladay-panel border border-aladay-line bg-aladay-surface p-4 shadow-aladay-panel">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
               <Ban className="w-4 h-4 text-rose-600" />
               Taxa de Cancelamento
             </span>
@@ -957,16 +957,16 @@ export const AuditedDashboardView: React.FC<AuditedDashboardViewProps> = ({
             </span>
           </div>
 
-          <p className="text-2xl font-bold font-mono text-neutral-900 mt-2 tabular-nums">
+          <p className="break-words text-2xl font-extrabold tracking-tight text-aladay-ink mt-2 tabular-nums">
             {auditMetrics.cancellationRate.toFixed(1)}%
           </p>
 
           <div className="mt-2 pt-2 border-t border-neutral-100 text-[11px] text-neutral-600 space-y-0.5">
-            <div className="flex justify-between">
+            <div className="flex flex-wrap justify-between gap-x-2">
               <span>Valor cancelado:</span>
               <span className="font-mono text-rose-700">{formatBRL(auditMetrics.cancelledValueCents)}</span>
             </div>
-            <div className="flex justify-between">
+            <div className="flex flex-wrap justify-between gap-x-2">
               <span>Regra contábil:</span>
               <span className="text-neutral-500">100% expurgado da receita</span>
             </div>
