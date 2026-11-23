@@ -1,3 +1,4 @@
+import { ResponsiveSidebar } from './ResponsiveSidebar';
 import React, { lazy, Suspense, useState, useMemo, useEffect } from 'react';
 import {
   LayoutGrid,
@@ -2124,229 +2125,42 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
         </div>
       )}
 
-      {/* Tabs navigation */}
-      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 flex gap-4 sm:gap-6 text-xs font-medium overflow-x-auto">
-        {(isSuperAdmin || authSession?.user.role === 'TENANT_OWNER') && (
-          <button type="button" onClick={() => setActiveTab('intelligence')}
-            className={`py-3 border-b-2 flex items-center gap-2 whitespace-nowrap shrink-0 ${activeTab === 'intelligence' ? 'border-blue-600 text-blue-600 font-semibold' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
-            <Zap className="w-4 h-4" /><span>Inteligência</span>
-          </button>
-        )}
-        {isSuperAdmin ? (
-          <>
-            <button
-              onClick={() => setActiveTab('super_subscriptions')}
-              className={`py-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
-                activeTab === 'super_subscriptions'
-                  ? 'border-indigo-600 text-indigo-600 font-semibold'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <ShieldCheck className="w-4 h-4 shrink-0" />
-              <span>Assinaturas &amp; Restaurantes</span>
-              <span className="bg-indigo-50 text-indigo-700 text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold">
-                {(allTenants.length > 0 ? allTenants : [tenant]).length}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('reports')}
-              className={`py-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
-                activeTab === 'reports'
-                  ? 'border-indigo-600 text-indigo-600 font-semibold'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <BarChart3 className="w-4 h-4 shrink-0" />
-              <span>Relatórios dos Restaurantes</span>
-              <span className="bg-indigo-100 text-indigo-800 text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase tracking-wider">
-                {tenant.name}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('settings')}
-              className={`py-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
-                activeTab === 'settings'
-                  ? 'border-indigo-600 text-indigo-600 font-semibold'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Settings className="w-4 h-4 shrink-0" />
-              <span>Configurar Restaurante ({tenant.name})</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('whatsapp')}
-              className={`py-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
-                activeTab === 'whatsapp'
-                  ? 'border-indigo-600 text-indigo-600 font-semibold'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <MessageSquare className="w-4 h-4 shrink-0" />
-              <span>Configurações da Aplicação (Evolution API, n8n &amp; Banco)</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('ifood')}
-              className={`py-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
-                activeTab === 'ifood'
-                  ? 'border-red-600 text-red-600 font-semibold'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Bike className="w-4 h-4 shrink-0 text-red-600" />
-              <span>Integração iFood ({tenant.name})</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('billing')}
-              className={`py-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
-                activeTab === 'billing'
-                  ? 'border-indigo-600 text-indigo-600 font-semibold'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <CreditCard className="w-4 h-4 shrink-0" />
-              <span>Faturamento &amp; Gateway Asaas</span>
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              onClick={() => setActiveTab('menu')}
-              className={`py-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
-                activeTab === 'menu' || activeTab === 'categories'
-                  ? 'border-blue-600 text-blue-600 font-semibold'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Utensils className="w-4 h-4 shrink-0" />
-              <span>Cardápio, Produtos &amp; Categorias</span>
-              <span className="bg-blue-50 text-blue-700 text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold">
-                {products.length}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('kds')}
-              className={`py-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0 ${
-                activeTab === 'kds'
-                  ? 'border-blue-600 text-blue-600 font-semibold'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <LayoutGrid className="w-4 h-4 shrink-0" />
-              <span>Gestão de Pedidos (KDS)</span>
-              {ordersByStatus.received.length > 0 && (
-                <span className="bg-blue-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-mono">
-                  {ordersByStatus.received.length}
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setActiveTab('tables')}
-              className={`py-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0 ${
-                activeTab === 'tables'
-                  ? 'border-amber-600 text-amber-700 font-semibold'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Utensils className="w-4 h-4 shrink-0 text-amber-600" />
-              <span>Mesas &amp; Garçom (Salão)</span>
-              <span className="bg-amber-50 text-amber-800 border border-amber-200 text-[9px] px-1.5 py-0.2 rounded font-bold uppercase tracking-wider">
-                PDV Mesa
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('ifood')}
-              className={`py-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0 ${
-                activeTab === 'ifood'
-                  ? 'border-red-600 text-red-600 font-semibold'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Bike className="w-4 h-4 shrink-0 text-red-600" />
-              <span>Integração iFood</span>
-              <span className="bg-red-50 text-red-700 border border-red-200 text-[9px] px-1.5 py-0.2 rounded font-bold uppercase tracking-wider">
-                Hub KDS
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('settings')}
-              className={`py-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0 ${
-                activeTab === 'settings'
-                  ? 'border-blue-600 text-blue-600 font-semibold'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Settings className="w-4 h-4 shrink-0" />
-              <span>Configurações &amp; Identidade</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('billing')}
-              className={`py-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0 ${
-                activeTab === 'billing'
-                  ? 'border-blue-600 text-blue-600 font-semibold'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <CreditCard className="w-4 h-4 shrink-0" />
-              <span>Assinatura (Anual R$ 99 / Mensal)</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('whatsapp')}
-              className={`py-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0 ${
-                activeTab === 'whatsapp'
-                  ? 'border-blue-600 text-blue-600 font-semibold'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <MessageSquare className="w-4 h-4 shrink-0" />
-              <span>WhatsApp &amp; Notificações</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('crm')}
-              className={`py-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0 ${
-                activeTab === 'crm'
-                  ? 'border-blue-600 text-blue-600 font-semibold'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Users className="w-4 h-4 shrink-0" />
-              <span>CRM &amp; Clientes</span>
-              <span className="bg-slate-100 text-slate-700 text-[10px] px-1.5 py-0.5 rounded-full font-mono">
-                {customers.length}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('reports')}
-              className={`py-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0 ${
-                activeTab === 'reports'
-                  ? 'border-blue-600 text-blue-600 font-semibold'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <BarChart3 className="w-4 h-4 shrink-0" />
-              <span>Relatórios</span>
-              <span className="bg-blue-100 text-blue-800 text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase tracking-wider">
-                Vendas &amp; Produtos
-              </span>
-            </button>
-          </>
-        )}
-      </div>
-
-      {/* Main Content Body */}
-      <div className="p-6 flex-1 overflow-y-auto">
+      <div className="min-w-0 lg:flex">
+        <ResponsiveSidebar
+          active={activeTab === 'categories' ? 'menu' : activeTab}
+          onSelect={setActiveTab}
+          groups={isSuperAdmin ? [
+            { label: 'Plataforma', items: [
+              { id: 'super_subscriptions', label: 'Assinaturas & Restaurantes', icon: ShieldCheck, count: (allTenants.length || 1) },
+              { id: 'reports', label: 'Relatórios dos Restaurantes', icon: BarChart3 },
+              { id: 'intelligence', label: 'Inteligência', icon: Zap },
+            ] },
+            { label: 'Configuração', items: [
+              { id: 'settings', label: 'Configurar Restaurante', icon: Settings },
+              { id: 'whatsapp', label: 'Configurações da Aplicação', icon: MessageSquare },
+              { id: 'ifood', label: 'Integração iFood', icon: Bike },
+              { id: 'billing', label: 'Faturamento & Gateway Asaas', icon: CreditCard },
+            ] },
+          ] : [
+            { label: 'Operação', items: [
+              { id: 'menu', label: 'Cardápio, Produtos & Categorias', icon: Utensils, count: products.length },
+              { id: 'kds', label: 'Gestão de Pedidos (KDS)', icon: LayoutGrid, count: ordersByStatus.received.length || undefined },
+              { id: 'tables', label: 'Mesas & Garçom (Salão)', icon: Utensils },
+            ] },
+            { label: 'Gestão', items: [
+              { id: 'reports', label: 'Relatórios', icon: BarChart3 },
+              { id: 'crm', label: 'CRM & Clientes', icon: Users, count: customers.length },
+              ...(authSession?.user.role === 'TENANT_OWNER' ? [{ id: 'intelligence' as const, label: 'Inteligência', icon: Zap }] : []),
+            ] },
+            { label: 'Configuração', items: [
+              { id: 'settings', label: 'Configurações & Identidade', icon: Settings },
+              { id: 'billing', label: 'Assinatura', icon: CreditCard },
+              { id: 'whatsapp', label: 'WhatsApp & Notificações', icon: MessageSquare },
+              { id: 'ifood', label: 'Integração iFood', icon: Bike },
+            ] },
+          ]}
+        />
+        <div className="min-w-0 flex-1 overflow-x-auto p-3 sm:p-5 lg:p-6">
         {activeTab === 'intelligence' && (isSuperAdmin || authSession?.user.role === 'TENANT_OWNER') && (
           <div className="space-y-6">
           <MenuImportView key={tenant.slug} tenant={tenant} authSession={authSession} />
@@ -4783,6 +4597,7 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
             onUpdateTenant={onUpdateTenant}
           />
         )}
+        </div>
       </div>
 
       {/* ============================================================== */}
