@@ -1,3 +1,4 @@
+import { SearchInput } from '../components/SearchInput';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ArrowRight, ChefHat, LayoutDashboard, RotateCcw, ShoppingBag, Utensils } from 'lucide-react';
@@ -56,6 +57,7 @@ function ItemSummary({ items }: { items: DemoCartItem[] }) {
 function DemoCatalog({ report }: { report: (error: unknown) => void }) {
   const session = useDemoSession();
   const [cartMessage, setCartMessage] = useState('');
+  const [query, setQuery] = useState('');
   const [category, setCategory] = useState('Todos');
   const [product, setProduct] = useState<DemoProduct>();
   const [quantity, setQuantity] = useState(1);
@@ -97,6 +99,12 @@ function DemoCatalog({ report }: { report: (error: unknown) => void }) {
     }
   }
 
+  const normalize = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('pt-BR');
+  const searchTerm = normalize(query.trim());
+  const visibleProducts = catalog.filter(item =>
+    (category === 'Todos' || item.category === category) &&
+    normalize(`${item.name} ${item.description}`).includes(searchTerm)
+  );
   const itemCount = session.cart.reduce((sum, item) => sum + item.quantity, 0);
 
   return <>
@@ -115,11 +123,15 @@ function DemoCatalog({ report }: { report: (error: unknown) => void }) {
           <a href="#cart-title" className="secondary"><ShoppingBag size={17} aria-hidden="true" /> Ver carrinho ({itemCount})</a>
         </div>
         <p className={cartMessage ? 'feedback mt-3' : 'sr-only'} role="status">{cartMessage}</p>
+        <div className="mt-4">
+          <SearchInput label="Buscar na demonstração" placeholder="Buscar produto ou ingrediente" value={query} onChange={setQuery} />
+        </div>
         <div className="my-4 flex flex-wrap gap-2" aria-label="Categorias">
           {categories.map(name => <button key={name} type="button" className="secondary" aria-pressed={category === name} onClick={() => setCategory(name)}>{name}</button>)}
         </div>
         <div className="product-grid">
-          {catalog.filter(item => category === 'Todos' || item.category === category).map(item => (
+          {visibleProducts.length === 0 && <p className="surface text-sm text-slate-600" role="status">Nenhum produto encontrado. Experimente outro termo ou categoria.</p>}
+          {visibleProducts.map(item => (
             <article key={item.id} className="surface flex flex-col gap-3">
               <div className="flex items-start justify-between gap-3">
                 <h3>{item.name}</h3><strong className="shrink-0 text-blue-800">{formatPrice(item.price)}</strong>

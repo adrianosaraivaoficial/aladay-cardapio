@@ -1,3 +1,4 @@
+import { SearchInput } from './SearchInput';
 import { checkoutAttempt } from '../utils/checkoutIdempotency';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { ShoppingBag, Clock, MapPin, Plus, Minus, Check, ArrowRight, ArrowLeft, MessageSquare, AlertCircle, ExternalLink, Zap, QrCode, Share2, Copy, X, Settings, Trash2, Search, UserCheck } from 'lucide-react';
@@ -1255,34 +1256,19 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
               )}
             </div>
 
-            {/* Search Input */}
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                aria-label="Buscar no cardápio"
-                placeholder="Buscar prato, bebida ou ingrediente..."
-                className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-neutral-200 rounded-lg text-neutral-800 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-400"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 p-0.5 cursor-pointer"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
+            <SearchInput
+              label="Buscar no cardápio"
+              placeholder="Buscar prato, bebida ou ingrediente"
+              value={searchQuery}
+              onChange={setSearchQuery}
+            />
 
             {/* Category Tabs */}
-            <div className="flex gap-1.5 overflow-x-auto no-scrollbar pt-0.5">
+            <div className="flex gap-1.5 overflow-x-auto no-scrollbar py-1">
               <button
                 type="button"
                 onClick={() => setSelectedCategoryId('ALL')}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg whitespace-nowrap transition-colors cursor-pointer ${
+                className={`min-h-11 shrink-0 px-3 py-1.5 text-xs font-semibold rounded-lg whitespace-nowrap transition-colors cursor-pointer ${
                   selectedCategoryId === 'ALL'
                     ? 'bg-neutral-900 text-white shadow-2xs'
                     : 'text-neutral-600 hover:text-neutral-900 bg-white border border-neutral-200'
@@ -1295,7 +1281,7 @@ export const ConsumerMenuView: React.FC<ConsumerMenuViewProps> = ({
                   key={cat.id}
                   type="button"
                   onClick={() => setSelectedCategoryId(cat.id)}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg whitespace-nowrap transition-colors cursor-pointer ${
+                  className={`min-h-11 shrink-0 px-3 py-1.5 text-xs font-semibold rounded-lg whitespace-nowrap transition-colors cursor-pointer ${
                     selectedCategoryId === cat.id
                       ? 'bg-neutral-900 text-white shadow-2xs'
                       : 'text-neutral-600 hover:text-neutral-900 bg-white border border-neutral-200'
