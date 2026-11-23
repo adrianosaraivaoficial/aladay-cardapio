@@ -40,7 +40,7 @@ interface Reel {
 
 const PRODUCT_CAPTURE = '/assets/landing/aladay-produtos.webp';
 const CART_CAPTURE = '/assets/landing/aladay-carrinho.webp';
-const ADMIN_CAPTURE = '/assets/landing/aladay-painel.webp';
+const ADMIN_CAPTURE = '/assets/landing/aladay-demo-painel.webp';
 const PHONE_CAPTURE = '/assets/landing/aladay-cardapio.webp';
 const WHATSAPP_CAPTURE = '/assets/landing/aladay-whatsapp.webp';
 
@@ -67,7 +67,7 @@ const DEMO_SCREENS: DemoScreen[] = [
   {
     id: 'management', label: 'Gestão', eyebrow: 'Operação centralizada',
     description: 'O restaurante gerencia o serviço em um painel próprio, separado da experiência do cliente.',
-    image: ADMIN_CAPTURE, imageAlt: 'Captura real do painel de gestão Aladay',
+    image: ADMIN_CAPTURE, imageAlt: 'Captura do painel demonstrativo Aladay',
   },
 ];
 
@@ -75,7 +75,7 @@ const REELS: Reel[] = [
   { id: 'digital-menu', title: 'O cardápio na mão do cliente', duration: '01', poster: PHONE_CAPTURE, posterAlt: 'Prévia vertical do cardápio digital Aladay' },
   { id: 'order-flow', title: 'Do produto ao carrinho', duration: '02', poster: PRODUCT_CAPTURE, posterAlt: 'Prévia vertical da seleção de produtos no Aladay' },
   { id: 'whatsapp', title: 'Atualizações pelo WhatsApp', duration: '03', poster: WHATSAPP_CAPTURE, posterAlt: 'Prévia vertical do atendimento pelo WhatsApp' },
-  { id: 'restaurant-panel', title: 'A rotina no painel', duration: '04', poster: ADMIN_CAPTURE, posterAlt: 'Prévia vertical do painel do restaurante Aladay' },
+  { id: 'restaurant-panel', title: 'A rotina no painel', duration: '04', poster: ADMIN_CAPTURE, posterAlt: 'Captura do painel demonstrativo Aladay' },
 ];
 
 const FAQS = [
@@ -204,9 +204,9 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           </div>
           <figure className="relative min-w-0 rounded-3xl border border-blue-200 bg-white p-3 shadow-xl shadow-blue-950/10 sm:p-5">
             <div className="mb-3 flex items-center gap-2 text-sm font-bold text-aladay-ink">
-              <LayoutDashboard className="h-4 w-4 text-aladay-brand" aria-hidden="true" /> Painel Aladay
+              <LayoutDashboard className="h-4 w-4 text-aladay-brand" aria-hidden="true" /> Painel demonstrativo Aladay
             </div>
-            <img src={ADMIN_CAPTURE} alt="Captura do painel Aladay com a visão operacional do restaurante" className="aspect-[16/10] w-full rounded-xl border border-aladay-line bg-aladay-background object-cover object-top" fetchPriority="high" decoding="async" />
+            <img src={ADMIN_CAPTURE} alt="Captura do painel demonstrativo Aladay com indicadores e um pedido fictício" className="aspect-[1000/728] w-full rounded-xl border border-aladay-line bg-aladay-background object-contain" fetchPriority="high" decoding="async" />
           </figure>
         </div>
       </section>

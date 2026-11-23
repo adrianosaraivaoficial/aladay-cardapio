@@ -1780,7 +1780,7 @@ export default function App() {
           </div>
 
           {/* Zone 2: Desktop Navigation Links */}
-          <nav className="hidden md:flex items-center gap-5 text-xs font-semibold text-slate-600">
+          <nav className="hidden lg:flex items-center gap-4 text-xs font-semibold text-slate-600">
             {isSuperAdmin ? (
               <>
                 <button
@@ -1961,17 +1961,17 @@ export default function App() {
               onClick={() => setIsMobileMenuOpen((prev) => !prev)}
               aria-label="Abrir ou fechar menu de navegação"
               aria-expanded={isMobileMenuOpen}
-              className="md:hidden inline-flex items-center justify-center p-2 rounded-lg text-slate-700 hover:text-blue-600 hover:bg-slate-100 border border-slate-200 transition-colors cursor-pointer"
+              className="lg:hidden inline-flex items-center justify-center p-2 rounded-lg text-slate-700 hover:text-blue-600 hover:bg-slate-100 border border-slate-200 transition-colors cursor-pointer"
             >
               {isMobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
             </button>
           </div>
         </div>
 
-        {/* Always-Visible Mobile Top Navigation Strip (< md) */}
+        {/* Always-Visible Mobile Top Navigation Strip (< lg) */}
         <nav
           aria-label="Navegação rápida mobile"
-          className="md:hidden border-t border-slate-200 bg-slate-50/90 px-3 py-2 flex items-center gap-1.5 overflow-x-auto"
+          className="lg:hidden border-t border-slate-200 bg-slate-50/90 px-3 py-2 flex items-center gap-1.5 overflow-x-auto"
         >
           {isSuperAdmin ? (
             <>
@@ -2101,7 +2101,7 @@ export default function App() {
 
         {/* Expandable Mobile Drawer Menu */}
         {isMobileMenuOpen && (
-          <div className="md:hidden border-t border-slate-200 bg-white px-4 py-4 space-y-3 shadow-lg">
+          <div className="lg:hidden border-t border-slate-200 bg-white px-4 py-4 space-y-3 shadow-lg">
             {authSession && hasActiveSubscription && (
               <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
                 <div className="flex items-center gap-2">
