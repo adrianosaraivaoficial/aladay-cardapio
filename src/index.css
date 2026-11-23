@@ -2,9 +2,16 @@
 
 @theme {
   --color-aladay-brand: #2563eb;
+  --color-aladay-brand-hover: #1d4ed8;
+  --color-aladay-brand-soft: #eff6ff;
+  --color-aladay-background: #f8fafc;
+  --color-aladay-text: #0f172a;
+  --color-aladay-success: #166534;
+  --color-aladay-danger: #b91c1c;
   --color-aladay-ink: #172554;
   --color-aladay-line: #e2e8f0;
   --color-aladay-surface: #ffffff;
+  --radius-aladay-control: .75rem;
   --radius-aladay-panel: 1rem;
   --shadow-aladay-panel: 0 3px 12px #0f172a0d;
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -20,8 +27,54 @@
   }
 
   body {
-    background-color: #f8fafc;
-    color: #0f172a;
+    background-color: var(--color-aladay-background);
+    color: var(--color-aladay-text);
   }
 }
 
+
+@layer components {
+  .aladay-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    min-height: 44px;
+    padding: .65rem 1rem;
+    border-radius: var(--radius-aladay-control);
+    font-size: .875rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color .15s;
+  }
+
+  .aladay-action-primary {
+    color: white;
+    background: var(--color-aladay-brand);
+  }
+
+  .aladay-action-primary:hover { background: var(--color-aladay-brand-hover); }
+  .aladay-action-primary:active { background: var(--color-aladay-ink); }
+  .aladay-action:disabled { opacity: .55; cursor: default; }
+
+  .aladay-search {
+    min-height: 44px;
+    width: 100%;
+    border: 1px solid var(--color-aladay-line);
+    border-radius: var(--radius-aladay-control);
+    background: var(--color-aladay-surface);
+    padding: .65rem .85rem;
+  }
+
+  .aladay-action:focus-visible,
+  .aladay-search:focus-visible,
+  .aladay-landing :focus-visible {
+    outline: 3px solid var(--color-aladay-brand);
+    outline-offset: 3px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .aladay-action { transition: none; }
+}
