@@ -1,3 +1,4 @@
+import { assertAccessible } from './accessibility';
 import {test,expect,type Page} from '@playwright/test';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -138,6 +139,7 @@ test('catalog publication refreshes the draft and native cancel prevents catalog
   const importer=page.getByRole('region',{name:'Inteligência do restaurante'});
   await importer.getByLabel('Arquivo de origem (até 650 KB)').setInputFiles({name:'atualizacao-e2e.csv',mimeType:'text/csv',buffer:Buffer.from('category,name,price\nNova categoria E2E,Novo prato sincronizado E2E,9.90\n')});
   await expect(importer.getByRole('status').filter({hasText:'Rascunho criado'})).toBeVisible();
+  await assertAccessible(page, 'section[aria-label="Inteligência do restaurante"]');
   await importer.getByLabel('Revisei o arquivo original, os candidatos e as diferenças. Confirmo a publicação no catálogo deste restaurante.').check();
   await importer.getByRole('button',{name:'Publicar cardápio revisado',exact:true}).click();
   await expect(importer.getByRole('status').filter({hasText:'Cardápio publicado com sucesso'})).toBeVisible();
@@ -169,6 +171,7 @@ test('owner reads real analytics aggregates after authenticated superadmin rebui
   await analytics.getByRole('button',{name:'Consultar período',exact:true}).click();
   await expect(analytics.getByText(/Agregados disponíveis\./)).toBeVisible();
   await expect(analytics.getByText('Receita comprovada',{exact:true}).first().locator('..')).toContainText(/24,50/);
+  await assertAccessible(page, 'section[aria-label="Analytics persistente"]');
   await expect(analytics.getByText('Pagamentos liquidados',{exact:true}).locator('..')).toContainText('1');
   const cross=await request.get(`/api/v1/tenants/${other}/analytics/summary?${new URLSearchParams(period)}`,{headers:{Authorization:`Bearer ${session.token}`}});expect(cross.status()).toBe(403);
 });
@@ -218,6 +221,11 @@ test('KDS moves an operational order without changing its financial state', asyn
 test('mobile navigation opens a drawer and returns focus after selection', async ({ page }) => {
   await enterPanel(page);
   await page.setViewportSize({ width: 390, height: 844 });
+  const intelligenceNav = page.getByRole('navigation', { name: 'Áreas de Inteligência' });
+  await intelligenceNav.getByRole('button', { name: 'Avaliações' }).press('Enter');
+  const feedback = page.getByRole('region', { name: 'Feedback e avaliações', exact: true });
+  await expect(feedback).toBeFocused();
+  await expect(feedback).toBeInViewport();
   const trigger = page.getByRole('button', { name: 'Seções', exact: true });
   await trigger.click();
   const drawer = page.getByRole('dialog', { name: 'Aladay' });
@@ -226,6 +234,9 @@ test('mobile navigation opens a drawer and returns focus after selection', async
   await expect(drawer).toBeHidden();
   await expect(trigger).toBeFocused();
   await expect(page.getByText('Gestão de Pedidos (KDS)', { exact: true }).filter({ visible: true }).first()).toBeVisible();
+  await trigger.click();
+  await drawer.getByRole('button', { name: 'Mesas & Garçom (Salão)' }).click();
+  await expect(page.getByRole('link', { name: 'Abrir aplicativo Garçom' })).toHaveAttribute('href', '/app/garcom/');
 });
 
 test('Garçom signs in, opens a tab and refreshes after reconnecting', async ({ page, context, request }) => {
@@ -242,11 +253,20 @@ test('Garçom signs in, opens a tab and refreshes after reconnecting', async ({ 
   await page.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
   await page.goto('/app/garcom');
   await expect(page).toHaveURL(origin + '/app/garcom/');
-  await page.locator('input[type=email]').fill(email);
-  await page.locator('input[type=password]').fill(password);
+  await page.getByRole('button', { name: 'Código via WhatsApp' }).click();
+  await expect(page.getByLabel('Seu WhatsApp (Com DDD)')).toHaveAttribute('autocomplete', 'tel');
+  await page.getByRole('button', { name: 'E-mail e Senha' }).click();
+  await page.getByLabel('E-mail de Acesso').fill(email);
+  await page.getByLabel('Senha', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Entrar no Painel' }).click();
   const table = page.getByRole('button', { name: /Mesa 1 Livre/ });
-  await table.click();
+  await table.focus();
+  await table.press('Enter');
+  await expect(page.getByRole('heading', { name: 'Mesa 1', exact: true })).toBeFocused();
+  await page.setViewportSize({ width: 320, height: 720 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  await assertAccessible(page, '.garcom');
+  await page.setViewportSize({ width: 390, height: 844 });
 
   await context.setOffline(true);
   await expect(page.getByText(/Sem conexão/)).toBeVisible();
@@ -264,6 +284,7 @@ test('Garçom signs in, opens a tab and refreshes after reconnecting', async ({ 
   await page.getByRole('button', { name: /Mesa 1 Ocupada/ }).click();
   await page.getByLabel('Produto').selectOption(product);
   await expect(page.getByRole('button', { name: 'Adicionar à comanda' })).toBeDisabled();
+  await assertAccessible(page, '.garcom');
   await page.getByRole('checkbox', { name: /Arroz/ }).check();
   await page.getByLabel('Quantidade').fill('2');
   await page.getByLabel('Observações').fill('Sem cebola');
