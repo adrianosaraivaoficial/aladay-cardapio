@@ -1,3 +1,4 @@
+import { StatusNotice } from '../components/StatusNotice';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import type { OptionGroup, OrderItemOption, OrderStatus, Product } from '../types';
 
@@ -244,9 +245,9 @@ export function GarcomTabItems({ tabId, basePath, token, canEdit, online, floorV
   return (
     <div className="garcom-items">
       {loading && online && <p className="garcom-muted" role="status">Atualizando comanda…</p>}
-      {readError && <p className="garcom-notice" role="alert">{readError}</p>}
-      {actionError && <p className="garcom-notice" role="alert">{actionError}</p>}
-      {message && <p className="garcom-notice garcom-success" role="status">{message}</p>}
+      {readError && <StatusNotice tone="error">{readError}</StatusNotice>}
+      {actionError && <StatusNotice tone="error">{actionError}</StatusNotice>}
+      {message && <StatusNotice tone="success">{message}</StatusNotice>}
       {pending && canEdit && (
         <div className="garcom-pending">
           <p>{sending ? 'Aguardando confirmação do servidor…' : 'Há uma solicitação com confirmação pendente.'}</p>
@@ -276,19 +277,19 @@ export function GarcomTabItems({ tabId, basePath, token, canEdit, online, floorV
             <form className="garcom-product-form" onSubmit={addItem}>
               <h3>Adicionar item</h3>
               {catalogLoading && online && <p className="garcom-muted" role="status">Carregando produtos…</p>}
-              {catalogError && <p className="garcom-notice" role="alert">{catalogError}</p>}
+              {catalogError && <StatusNotice tone="error">{catalogError}</StatusNotice>}
               {!catalogLoading && !catalogError && !products.length && <p className="garcom-muted">Nenhum produto disponível.</p>}
               {!!products.length && (
                 <fieldset disabled={!tabReady || !!pending || catalogLoading || !!catalogError}>
                   <label>Produto
-                    <select value={productId} onChange={event => { setProductId(event.target.value); setSelectedOptions([]); }} required>
+                    <select className="aladay-field" value={productId} onChange={event => { setProductId(event.target.value); setSelectedOptions([]); }} required>
                       <option value="">Selecione um produto</option>
                       {products.map(item => <option key={item.id} value={item.id}>{item.name} · {money(item.priceCents)}</option>)}
                     </select>
                   </label>
                   {product && (
                     <>
-                      <label>Quantidade<input type="number" min="1" max="99" inputMode="numeric" value={quantity} onChange={event => setQuantity(event.target.value)} required /></label>
+                      <label>Quantidade<input className="aladay-field" type="number" min="1" max="99" inputMode="numeric" value={quantity} onChange={event => setQuantity(event.target.value)} required /></label>
                       {groupOptions.map(group => {
                         const groupCount = selectedOptions.filter(option => option.groupId === group.id).length;
                         return (
@@ -309,7 +310,7 @@ export function GarcomTabItems({ tabId, basePath, token, canEdit, online, floorV
                           </fieldset>
                         );
                       })}
-                      <label>Observações<textarea rows={2} value={notes} maxLength={300} onChange={event => setNotes(event.target.value)} /></label>
+                      <label>Observações<textarea className="aladay-field" rows={2} value={notes} maxLength={300} onChange={event => setNotes(event.target.value)} /></label>
                       {validQuantity && <p className="garcom-muted">Valor estimado do item {money(itemUnitCents * itemQuantity)}</p>}
                       <button type="submit" className="garcom-button" disabled={!validQuantity || !configured}>Adicionar à comanda</button>
                     </>

@@ -1,11 +1,12 @@
+import { StatusNotice } from './StatusNotice';
 import { useState } from 'react';
 import { AuthSession, Category, Product, RestaurantTenant } from '../types';
 
 type RuleFields = { name: string; enabled: boolean; priority: number; triggerProductIds: string[]; triggerCategoryIds: string[]; suggestedProductIds: string[]; minSubtotalCents: number; maxSubtotalCents: number | null; weekdays: number[]; startTime: string; endTime: string; timezone: string; maxImpressionsPerSession: number };
 type Rule = RuleFields & { id: string; version: number };
 const emptyRule = (): RuleFields => ({ name: '', enabled: false, priority: 0, triggerProductIds: [], triggerCategoryIds: [], suggestedProductIds: [], minSubtotalCents: 0, maxSubtotalCents: null, weekdays: [0, 1, 2, 3, 4, 5, 6], startTime: '00:00', endTime: '00:00', timezone: 'America/Sao_Paulo', maxImpressionsPerSession: 1 });
-const input = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm';
-const button = 'rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed';
+const input = 'aladay-field';
+const button = 'aladay-action aladay-action-secondary';
 
 export function UpsellRulesView({ tenant, authSession, categories, products }: { tenant: RestaurantTenant; authSession?: AuthSession | null; categories: Category[]; products: Product[] }) {
   const [rules, setRules] = useState<Rule[]>([]);
@@ -23,9 +24,9 @@ export function UpsellRulesView({ tenant, authSession, categories, products }: {
   async function load() { const data = await request<{ rules: Rule[] }>('rules'); setRules(data.rules); }
   function toggle(field: 'triggerProductIds' | 'triggerCategoryIds' | 'suggestedProductIds', id: string, checked: boolean) { if (draft) setDraft({ ...draft, [field]: checked ? [...draft[field], id] : draft[field].filter(value => value !== id) }); }
   const selection = (field: 'triggerProductIds' | 'triggerCategoryIds' | 'suggestedProductIds', title: string, items: Array<{ id: string; name: string }>) => <fieldset className="rounded-lg border p-3"><legend className="px-1 text-sm font-semibold">{title}</legend><div className="max-h-40 overflow-auto space-y-2">{items.map(item => <label className="flex items-center gap-2 text-xs" key={item.id}><input type="checkbox" checked={draft?.[field].includes(item.id) || false} onChange={e => toggle(field, item.id, e.target.checked)} />{item.name}</label>)}</div></fieldset>;
-  return <section className="rounded-xl border border-slate-200 bg-white p-5 space-y-5" aria-label="Sugestões de complementos">
+  return <section className="aladay-panel aladay-keyboard scroll-mt-32 space-y-5" id="inteligencia-complementos" tabIndex={-1} aria-label="Sugestões de complementos">
     <div><h3 className="text-lg font-semibold">Sugestões de complementos</h3><p className="mt-1 text-sm text-slate-600">Regras determinísticas oferecem produtos disponíveis quando o cliente solicita sugestões na sacola. As condições selecionadas devem ser atendidas em conjunto. Nenhum item é adicionado automaticamente.</p></div>
-    {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}{notice && <p role="status" className="text-sm text-emerald-800">{notice}</p>}{busy && <p role="status" className="text-sm">Processando regras…</p>}
+    {error && <StatusNotice tone="error">{error}</StatusNotice>}{notice && <StatusNotice tone="success">{notice}</StatusNotice>}{busy && <StatusNotice tone="progress">Processando regras…</StatusNotice>}
     <div className="flex flex-wrap gap-3"><button className={button} disabled={busy} type="button" onClick={() => perform(load)}>Carregar regras</button><button className={button} disabled={busy} type="button" onClick={() => { setDraft(emptyRule()); setEditing(null); setError(''); }}>Nova regra desativada</button><button className={button} disabled={busy} type="button" onClick={() => perform(async () => { setMetrics(await request('metrics')); })}>Consultar métricas</button></div>
     {metrics && <div className="rounded-lg bg-slate-50 p-3 text-sm"><p>{metrics.impressions} impressões · {metrics.addToCart} adições à sacola</p><p className="mt-1 text-xs text-slate-600">{metrics.createdOrdersAttributed} pedidos atribuídos · {metrics.purchaseConversions} conversões com pagamento comprovado. {metrics.attributionNote}</p></div>}
     {rules.map(rule => <div key={rule.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"><div><p className="font-semibold text-sm">{rule.name}</p><p className="text-xs text-slate-600">{rule.enabled ? 'Ativada' : 'Desativada'} · Prioridade {rule.priority} · Versão {rule.version}</p></div><div className="flex gap-2"><button type="button" className={button} disabled={busy} onClick={() => { const { id: _id, version: _version, ...fields } = rule; setDraft(fields); setEditing(rule); }}>Editar</button><button type="button" className={button} disabled={busy} onClick={() => { if (window.confirm(`Excluir a regra "${rule.name}"?`)) void perform(async () => { await request(`rules/${encodeURIComponent(rule.id)}?version=${rule.version}`, 'DELETE'); await load(); if (editing?.id === rule.id) { setDraft(null); setEditing(null); } setNotice('Regra excluída.'); }); }}>Excluir</button></div></div>)}

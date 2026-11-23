@@ -1,3 +1,4 @@
+import { StatusNotice } from '../components/StatusNotice';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronRight, CircleAlert, ClipboardList, RefreshCw, Utensils, WifiOff } from 'lucide-react';
 import type { AuthSession } from '../types';
@@ -177,7 +178,7 @@ function GarcomFloor({ authSession }: { authSession: AuthSession }) {
   }
 
   return (
-    <section className="garcom" aria-labelledby="garcom-title">
+    <section className="garcom aladay-keyboard" aria-labelledby="garcom-title">
       <header className="garcom-header">
         <div>
           <p className="garcom-tenant"><Utensils size={16} aria-hidden="true" /> {user.tenantName || user.tenantSlug}</p>
@@ -188,12 +189,12 @@ function GarcomFloor({ authSession }: { authSession: AuthSession }) {
         </button>
       </header>
       {!online && (
-        <p className="garcom-notice" role="status">
+        <StatusNotice tone="warning">
           <WifiOff size={18} aria-hidden="true" /> Sem conexão. As mesas serão atualizadas ao reconectar.
-        </p>
+        </StatusNotice>
       )}
       {loading && <p className="garcom-progress" role="status">{floor ? 'Atualizando mesas…' : 'Carregando mesas…'}</p>}
-      {readError && <p className="garcom-notice" role="alert"><CircleAlert size={18} aria-hidden="true" /> {readError}</p>}
+      {readError && <StatusNotice tone="error"><CircleAlert size={18} aria-hidden="true" /> {readError}</StatusNotice>}
       {floor && (
         <>
           <dl className="garcom-stats">
@@ -220,12 +221,12 @@ function GarcomFloor({ authSession }: { authSession: AuthSession }) {
               ) : <p className="garcom-muted">Nenhuma mesa configurada para este restaurante.</p>}
             </section>
             {selected && (
-              <section className="garcom-detail" aria-labelledby="garcom-table-title">
+              <section className="aladay-panel garcom-detail" aria-labelledby="garcom-table-title">
                 <h2 ref={detailsHeading} id="garcom-table-title" tabIndex={-1}>
                   <ClipboardList size={20} aria-hidden="true" /> Mesa {selected.number}
                 </h2>
-                {actionError && <p className="garcom-notice" role="alert"><CircleAlert size={18} aria-hidden="true" /> {actionError}</p>}
-                {feedback && <p className="garcom-notice garcom-success" role="status">{feedback}</p>}
+                {actionError && <StatusNotice tone="error"><CircleAlert size={18} aria-hidden="true" /> {actionError}</StatusNotice>}
+                {feedback && <StatusNotice tone="success">{feedback}</StatusNotice>}
                 {selected.tab ? (
                   <>
                     <dl className="garcom-tab-detail">
@@ -263,9 +264,9 @@ export function GarcomView({ authSession }: { authSession: AuthSession }) {
   const { id, tenantSlug } = authSession.user;
   if (!tenantSlug || tenantSlug === '*') {
     return (
-      <section className="garcom" aria-labelledby="garcom-title">
+      <section className="garcom aladay-keyboard" aria-labelledby="garcom-title">
         <h1 id="garcom-title">Aladay Garçom</h1>
-        <p className="garcom-notice" role="alert">Entre com uma conta vinculada ao restaurante para acessar o salão.</p>
+        <StatusNotice tone="error">Entre com uma conta vinculada ao restaurante para acessar o salão.</StatusNotice>
       </section>
     );
   }

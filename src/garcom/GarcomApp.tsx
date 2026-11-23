@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AuthPortalView } from '../components/AuthPortalView';
+import { StatusNotice } from '../components/StatusNotice';
 import type { AuthSession } from '../types';
 import { GarcomView } from './GarcomView';
 
@@ -54,13 +55,13 @@ export default function GarcomApp() {
     <header className="border-b border-aladay-line bg-white">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 p-4">
         <div className="flex items-center gap-2 font-extrabold"><span aria-hidden="true" className="rounded-lg bg-aladay-brand px-2 py-1 text-white">A</span> Aladay Garçom</div>
-        {session && <button className="min-h-11 rounded-xl border border-slate-300 px-4 text-sm font-semibold" type="button" disabled={signingOut} onClick={() => void logout()}>{signingOut ? 'Saindo…' : 'Sair'}</button>}
+        {session && <button className="aladay-action aladay-action-secondary" type="button" disabled={signingOut} onClick={() => void logout()}>{signingOut ? 'Saindo…' : 'Sair'}</button>}
       </div>
     </header>
-    {logoutError && <p className="mx-auto max-w-5xl px-4 pt-4 text-red-800" role="alert">{logoutError}</p>}
-    {session && allowed ? <GarcomView key={session.user.id} authSession={session} /> :
+    {logoutError && <div className="mx-auto max-w-5xl px-4 pt-4"><StatusNotice tone="error">{logoutError}</StatusNotice></div>}
+    {session && allowed ? <main><GarcomView key={session.user.id} authSession={session} /></main> :
       <main className="mx-auto max-w-2xl p-4 sm:p-8">
-        {session ? <p role="alert">Use uma conta autorizada no Aladay Garçom.</p> :
+        {session ? <StatusNotice tone="error">Use uma conta autorizada no Aladay Garçom.</StatusNotice> :
           <AuthPortalView currentSession={null} onSessionAuthenticated={authenticate} onNavigateToAdmin={() => {}} />}
       </main>}
   </div>;

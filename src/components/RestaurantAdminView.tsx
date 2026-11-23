@@ -2163,10 +2163,31 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
         <div className="min-w-0 flex-1 overflow-x-auto p-3 sm:p-5 lg:p-6">
         {activeTab === 'intelligence' && (isSuperAdmin || authSession?.user.role === 'TENANT_OWNER') && (
           <div className="space-y-6">
-          <MenuImportView key={tenant.slug} tenant={tenant} authSession={authSession} />
-          <AnalyticsView key={`analytics_${tenant.slug}`} tenant={tenant} authSession={authSession} />
-          <UpsellRulesView key={`upsell_${tenant.slug}`} tenant={tenant} authSession={authSession} products={products} categories={categories} />
-          <FeedbackAdminView key={`feedback_${tenant.slug}`} tenant={tenant} authSession={authSession} orders={orders} />
+            <nav className="aladay-panel flex flex-wrap gap-2 !p-2" aria-label="Áreas de Inteligência">
+              {[
+                ['inteligencia-importacao', 'Importação'],
+                ['inteligencia-analytics', 'Analytics'],
+                ['inteligencia-complementos', 'Complementos'],
+                ['inteligencia-feedback', 'Avaliações'],
+              ].map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className="aladay-action hover:bg-aladay-brand-soft"
+                  onClick={() => {
+                    const section = document.getElementById(id);
+                    section?.focus({ preventScroll: true });
+                    section?.scrollIntoView({ block: 'start' });
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </nav>
+            <MenuImportView key={tenant.slug} tenant={tenant} authSession={authSession} />
+            <AnalyticsView key={`analytics_${tenant.slug}`} tenant={tenant} authSession={authSession} />
+            <UpsellRulesView key={`upsell_${tenant.slug}`} tenant={tenant} authSession={authSession} products={products} categories={categories} />
+            <FeedbackAdminView key={`feedback_${tenant.slug}`} tenant={tenant} authSession={authSession} orders={orders} />
           </div>
         )}
         {/* ============================================================== */}
@@ -4584,18 +4605,29 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
         {/* TAB 10: CONTROLE DE SALÃO, MESAS & GARÇOM                      */}
         {/* ============================================================== */}
         {activeTab === 'tables' && (
-          <TableWaiterManagementView
-            tenant={tenant}
-            authSession={authSession}
-            orders={orders}
-            products={products}
-            categories={categories}
-            onAddOrder={(newOrder) => {
-              if (onAddOrder) onAddOrder(newOrder);
-            }}
-            onUpdateOrderStatus={onUpdateOrderStatus}
-            onUpdateTenant={onUpdateTenant}
-          />
+          <div className="space-y-4">
+            {authSession?.user.role === 'TENANT_OWNER' && (
+              <section className="aladay-panel flex flex-wrap items-center justify-between gap-3" aria-label="Aplicativo de salão">
+                <div>
+                  <h2 className="font-bold text-aladay-ink">Aladay Garçom</h2>
+                  <p className="mt-1 text-sm text-slate-600">Abra comandas e envie itens para a cozinha quando o aplicativo estiver liberado para o restaurante.</p>
+                </div>
+                <a href="/app/garcom/" className="aladay-action aladay-action-primary">Abrir aplicativo Garçom</a>
+              </section>
+            )}
+            <TableWaiterManagementView
+              tenant={tenant}
+              authSession={authSession}
+              orders={orders}
+              products={products}
+              categories={categories}
+              onAddOrder={(newOrder) => {
+                if (onAddOrder) onAddOrder(newOrder);
+              }}
+              onUpdateOrderStatus={onUpdateOrderStatus}
+              onUpdateTenant={onUpdateTenant}
+            />
+          </div>
         )}
         </div>
       </div>

@@ -9,6 +9,7 @@
   --color-aladay-success: #166534;
   --color-aladay-danger: #b91c1c;
   --color-aladay-ink: #172554;
+  --color-aladay-control-border: #64748b;
   --color-aladay-line: #e2e8f0;
   --color-aladay-surface: #ffffff;
   --radius-aladay-control: .75rem;
@@ -57,6 +58,38 @@
   .aladay-action-primary:active { background: var(--color-aladay-ink); }
   .aladay-action:disabled { opacity: .55; cursor: default; }
 
+  .aladay-action-secondary {
+    border: 1px solid var(--color-aladay-control-border);
+    background: var(--color-aladay-surface);
+    color: var(--color-aladay-ink);
+  }
+
+  .aladay-action-secondary:hover:not(:disabled) { background: var(--color-aladay-brand-soft); }
+
+  .aladay-panel {
+    min-width: 0;
+    border: 1px solid var(--color-aladay-line);
+    border-radius: var(--radius-aladay-panel);
+    background: var(--color-aladay-surface);
+    padding: clamp(.75rem, 2vw, 1.25rem);
+    box-shadow: var(--shadow-aladay-panel);
+  }
+
+  .aladay-field {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    border: 1px solid var(--color-aladay-control-border);
+    border-radius: var(--radius-aladay-control);
+    background: var(--color-aladay-surface);
+    color: var(--color-aladay-text);
+    padding: .5rem .75rem;
+    font-size: .875rem;
+  }
+
+  .aladay-field:disabled { background: var(--color-aladay-background); }
+
   .aladay-search {
     min-height: 44px;
     width: 100%;
@@ -68,6 +101,8 @@
 
   .aladay-action:focus-visible,
   .aladay-search:focus-visible,
+  .aladay-field:focus-visible,
+  .aladay-keyboard :focus-visible,
   .aladay-landing :focus-visible {
     outline: 3px solid var(--color-aladay-brand);
     outline-offset: 3px;
@@ -78,3 +113,7 @@
   html { scroll-behavior: auto; }
   .aladay-action { transition: none; }
 }
+
+.aladay-keyboard { --aladay-sticky-clearance: 8rem; }
+.aladay-keyboard :focus-visible { scroll-margin-block: var(--aladay-sticky-clearance) 1rem; }
+.aladay-keyboard input[type="checkbox"] { min-width: 1.5rem; min-height: 1.5rem; flex-shrink: 0; }

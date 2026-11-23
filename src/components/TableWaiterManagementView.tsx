@@ -1,3 +1,4 @@
+import { StatusNotice } from './StatusNotice';
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   Utensils,
@@ -454,8 +455,8 @@ export const TableWaiterManagementView: React.FC<TableWaiterManagementViewProps>
 
   return (
     <div className="space-y-6">
-      {stateError && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{stateError}</p>}
-      {stateBusy && <p role="status" className="text-sm text-slate-600">Sincronizando estado das mesas…</p>}
+      {stateError && <StatusNotice tone="error">{stateError}</StatusNotice>}
+      {stateBusy && <StatusNotice tone="progress">Sincronizando estado das mesas…</StatusNotice>}
       {/* Top Header & Saloon KPI Strip */}
       <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
