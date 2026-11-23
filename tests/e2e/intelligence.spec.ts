@@ -214,3 +214,16 @@ test('KDS moves an operational order without changing its financial state', asyn
   const result = await pool.query('SELECT status,payment_status FROM orders WHERE id=$1', [orderId]);
   expect(result.rows[0]).toEqual({ status: 'confirmed', payment_status: 'pending' });
 });
+
+test('mobile navigation opens a drawer and returns focus after selection', async ({ page }) => {
+  await enterPanel(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const trigger = page.getByRole('button', { name: 'Seções', exact: true });
+  await trigger.click();
+  const drawer = page.getByRole('dialog', { name: 'Aladay' });
+  await expect(drawer.getByRole('button', { name: 'Inteligência' })).toHaveAttribute('aria-current', 'page');
+  await drawer.getByRole('button', { name: 'Gestão de Pedidos (KDS)' }).click();
+  await expect(drawer).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await expect(page.getByText('Gestão de Pedidos (KDS)', { exact: true }).filter({ visible: true }).first()).toBeVisible();
+});

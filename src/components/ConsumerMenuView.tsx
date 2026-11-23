@@ -1,7 +1,7 @@
 import { SearchInput } from './SearchInput';
 import { checkoutAttempt } from '../utils/checkoutIdempotency';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { ShoppingBag, Clock, MapPin, Plus, Minus, Check, ArrowRight, ArrowLeft, MessageSquare, AlertCircle, ExternalLink, Zap, QrCode, Share2, Copy, X, Settings, Trash2, Search, UserCheck } from 'lucide-react';
+import { ShoppingBag, Clock, MapPin, Plus, Minus, Check, ArrowRight, ArrowLeft, MessageSquare, AlertCircle, ExternalLink, Zap, QrCode, Share2, Copy, X, Settings, Trash2, UserCheck } from 'lucide-react';
 import { Category, OptionGroup, OptionItem, Order, OrderItem, OrderItemOption, Product, RestaurantTenant } from '../types';
 import { ThermalTicketModal } from './ThermalTicketModal';
 import { PixPaymentModal } from './PixPaymentModal';

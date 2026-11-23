@@ -10,7 +10,7 @@ const session: DemoSession = { sessionId: 'test-session', cart, orders: [], sele
 const prices = new Map([['burger', 3290], ['fries', 1490]]);
 
 test('demo checkout calculates integer cents and consumes the confirmed cart once', () => {
-  const updated = createOrder(session, cart, 'Pix simulado', prices);
+  const updated = createOrder(session, cart, 'Pix simulado', item => prices.get(item.productId));
   assert.equal(totalOf(cart), 8070);
   assert.equal(updated.orders.length, 1);
   const [order] = updated.orders;
@@ -21,13 +21,13 @@ test('demo checkout calculates integer cents and consumes the confirmed cart onc
   assert.equal(order.status, 'RECEBIDO');
   assert.match(order.createdAt, /Z$/);
   assert.deepEqual(updated.cart, []);
-  assert.throws(() => createOrder(updated, cart, 'Pix simulado', prices), /carrinho mudou/);
+  assert.throws(() => createOrder(updated, cart, 'Pix simulado', item => prices.get(item.productId)), /carrinho mudou/);
 });
 
 test('demo checkout rejects stale carts and invalid catalog prices or quantities', () => {
-  assert.throws(() => createOrder(session, [], 'Pix simulado', prices), /carrinho mudou/);
+  assert.throws(() => createOrder(session, [], 'Pix simulado', item => prices.get(item.productId)), /carrinho mudou/);
   for (const invalid of [{ ...cart[0], unitPrice: 1 }, { ...cart[0], quantity: 1.5 }, { ...cart[0], quantity: 21 }, { ...cart[0], productId: 'unknown' }]) {
-    assert.throws(() => createOrder({ ...session, cart: [invalid] }, [invalid], 'Pix simulado', prices), /Revise/);
+    assert.throws(() => createOrder({ ...session, cart: [invalid] }, [invalid], 'Pix simulado', item => prices.get(item.productId)), /Revise/);
   }
 });
 

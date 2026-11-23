@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { ArrowRight, ChefHat, LayoutDashboard, RotateCcw, ShoppingBag, Utensils } from 'lucide-react';
 import '../index.css';
 import './demo.css';
-import { catalog, type DemoProduct } from './catalog';
+import { catalog, priceWithOptions, type DemoProduct } from './catalog';
 import { createOrder, emptySession, maxQuantity, nextStatus, paymentMethods, statusLabel, totalOf, type DemoCartItem, type DemoOrder, type PaymentMethod } from './orders';
 import { mutateSession, useDemoSession } from './session';
 
@@ -14,7 +14,6 @@ const date = new Intl.DateTimeFormat('pt-BR', {
 });
 const formatPrice = (cents: number) => money.format(cents / 100);
 const products = new Map(catalog.map(product => [product.id, product]));
-const prices = new Map(catalog.filter(product => product.available).map(product => [product.id, product.price]));
 const categories = ['Todos', ...new Set(catalog.map(product => product.category))];
 const menuPath = '/demo/cardapio';
 const panelPath = '/demo/painel';
@@ -47,8 +46,10 @@ function Modal({ title, children, close }: { title: string; children: ReactNode;
 
 function ItemSummary({ items }: { items: DemoCartItem[] }) {
   return <ul className="divide-y divide-slate-200">
-    {items.map(item => <li key={item.productId} className="flex justify-between gap-4 py-3">
-      <span>{item.quantity} × {products.get(item.productId)?.name}</span>
+    {items.map(item => <li key={JSON.stringify([item.productId, item.selectedOptions])} className="flex justify-between gap-4 py-3">
+      <span>{item.quantity} × {products.get(item.productId)?.name}
+        {item.selectedOptions.length > 0 && <small className="block text-slate-600">{item.selectedOptions.join(', ')}</small>}
+      </span>
       <strong className="shrink-0">{formatPrice(item.quantity * item.unitPrice)}</strong>
     </li>)}
   </ul>;
@@ -60,6 +61,7 @@ function DemoCatalog({ report }: { report: (error: unknown) => void }) {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('Todos');
   const [product, setProduct] = useState<DemoProduct>();
+  const [options, setOptions] = useState<string[]>([]);
   const [quantity, setQuantity] = useState(1);
   const [checkout, setCheckout] = useState(false);
   const [payment, setPayment] = useState<PaymentMethod>();
@@ -68,13 +70,16 @@ function DemoCatalog({ report }: { report: (error: unknown) => void }) {
   const submitting = useRef(false);
   const order = session.orders.find(item => item.id === confirmation);
 
-  function changeQuantity(selected: DemoProduct, quantityChange: number) {
+  function changeQuantity(selected: DemoProduct, quantityChange: number, selectedOptions: string[] = []) {
     return mutateSession(current => {
-      const item = current.cart.find(entry => entry.productId === selected.id);
+      const unitPrice = priceWithOptions(selected, selectedOptions);
+      if (!selected.available || unitPrice === undefined) throw new Error('Revise os complementos escolhidos.');
+      const item = current.cart.find(entry => entry.productId === selected.id &&
+        JSON.stringify(entry.selectedOptions) === JSON.stringify(selectedOptions));
       const updated = (item?.quantity ?? 0) + quantityChange;
       if (updated > maxQuantity) throw new Error('O limite é de 20 unidades por produto.');
-      const next = { productId: selected.id, quantity: updated, unitPrice: selected.price, notes: '', selectedOptions: [] };
-      const cart = updated <= 0 ? current.cart.filter(entry => entry.productId !== selected.id)
+      const next = { productId: selected.id, quantity: updated, unitPrice, notes: '', selectedOptions };
+      const cart = updated <= 0 ? current.cart.filter(entry => entry !== item)
         : item ? current.cart.map(entry => entry === item ? next : entry) : [...current.cart, next];
       return { ...current, cart };
     });
@@ -87,7 +92,10 @@ function DemoCatalog({ report }: { report: (error: unknown) => void }) {
     try {
       const updated = await mutateSession(current => {
         if (current.sessionId !== session.sessionId) throw new Error('A demonstração foi reiniciada.');
-        return createOrder(current, session.cart, payment, prices);
+        return createOrder(current, session.cart, payment, item => {
+          const selected = products.get(item.productId);
+          return selected?.available ? priceWithOptions(selected, item.selectedOptions) : undefined;
+        });
       });
       setCheckout(false);
       setConfirmation(updated.selectedOrderId ?? undefined);
@@ -137,7 +145,7 @@ function DemoCatalog({ report }: { report: (error: unknown) => void }) {
                 <h3>{item.name}</h3><strong className="shrink-0 text-blue-800">{formatPrice(item.price)}</strong>
               </div>
               <p className="grow text-sm text-slate-600">{item.description}</p>
-              <button className="secondary self-start" type="button" disabled={!item.available} onClick={() => { setQuantity(1); setProduct(item); }}>
+              <button className="secondary self-start" type="button" disabled={!item.available} onClick={() => { setQuantity(1); setOptions([]); setProduct(item); }}>
                 {item.available ? 'Escolher' : 'Indisponível'}<span className="sr-only"> {item.name}</span>
               </button>
             </article>
@@ -151,13 +159,14 @@ function DemoCatalog({ report }: { report: (error: unknown) => void }) {
             {session.cart.map(item => {
               const selected = products.get(item.productId);
               if (!selected) return null;
-              return <li key={item.productId} className="py-3">
-                <div className="flex justify-between gap-3"><strong>{selected.name}</strong><span>{formatPrice(item.quantity * item.unitPrice)}</span></div>
+              const lineName = [selected.name, ...item.selectedOptions].join(', ');
+              return <li key={JSON.stringify([item.productId, item.selectedOptions])} className="py-3">
+                <div className="flex justify-between gap-3"><strong>{lineName}</strong><span>{formatPrice(item.quantity * item.unitPrice)}</span></div>
                 <div className="mt-2 flex items-center gap-2">
-                  <button className="secondary step" type="button" aria-label={'Diminuir quantidade de ' + selected.name} disabled={item.quantity === 1} onClick={() => void changeQuantity(selected, -1).catch(report)}>−</button>
-                  <output aria-label={'Quantidade de ' + selected.name}>{item.quantity}</output>
-                  <button className="secondary step" type="button" aria-label={'Aumentar quantidade de ' + selected.name} disabled={item.quantity === maxQuantity} onClick={() => void changeQuantity(selected, 1).catch(report)}>+</button>
-                  <button className="secondary ml-auto" type="button" aria-label={'Remover ' + selected.name} onClick={() => void mutateSession(current => ({ ...current, cart: current.cart.filter(entry => entry.productId !== item.productId) })).catch(report)}>Remover</button>
+                  <button className="secondary step" type="button" aria-label={'Diminuir quantidade de ' + lineName} disabled={item.quantity === 1} onClick={() => void changeQuantity(selected, -1, item.selectedOptions).catch(report)}>−</button>
+                  <output aria-label={'Quantidade de ' + lineName}>{item.quantity}</output>
+                  <button className="secondary step" type="button" aria-label={'Aumentar quantidade de ' + lineName} disabled={item.quantity === maxQuantity} onClick={() => void changeQuantity(selected, 1, item.selectedOptions).catch(report)}>+</button>
+                  <button className="secondary ml-auto" type="button" aria-label={'Remover ' + lineName} onClick={() => void changeQuantity(selected, -item.quantity, item.selectedOptions).catch(report)}>Remover</button>
                 </div>
               </li>;
             })}
@@ -174,12 +183,23 @@ function DemoCatalog({ report }: { report: (error: unknown) => void }) {
           {Array.from({ length: maxQuantity }, (_, index) => <option key={index}>{index + 1}</option>)}
         </select>
       </label>
+      {product.options && <fieldset className="mt-4 grid gap-2">
+        <legend className="mb-2 font-bold">Complementos opcionais</legend>
+        {product.options.map(option => (
+          <label key={option.name} className="payment">
+            <input type="checkbox" checked={options.includes(option.name)} onChange={event =>
+              setOptions(current => event.target.checked ? [...current, option.name].sort() : current.filter(name => name !== option.name))
+            } />
+            {option.name} · +{formatPrice(option.price)}
+          </label>
+        ))}
+      </fieldset>}
       <button type="button" className="primary mt-5 w-full" onClick={() => {
-        void changeQuantity(product, quantity).then(() => {
+        void changeQuantity(product, quantity, options).then(() => {
           setProduct(undefined);
           setCartMessage(product.name + ' adicionado ao carrinho.');
         }).catch(error => { setProduct(undefined); report(error); });
-      }}>Adicionar ao carrinho · {formatPrice(quantity * product.price)}</button>
+      }}>Adicionar ao carrinho · {formatPrice(quantity * (priceWithOptions(product, options) ?? product.price))}</button>
     </Modal>}
     {checkout && <Modal title="Checkout simulado" close={() => setCheckout(false)}>
       <ItemSummary items={session.cart} />

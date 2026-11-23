@@ -5,7 +5,7 @@ A base auditada é o commit `e323cbb` da branch de demonstração. O checkout an
 | Área | Implementação observada | Verificação ou dependência |
 | --- | --- | --- |
 | Landing e cadastro | Preços, calculadora, FAQ, consentimento, captura do produto e cadastro existente | A oferta e os links de cadastro devem permanecer referenciados pelo código atual |
-| Demo | Entrada HTML própria, CSP restritiva, cardápio, carrinho, checkout e painel simulados | IndexedDB e sincronização entre abas; busca ausente na base |
+| Demo | Entrada HTML própria, CSP restritiva, cardápio, carrinho, checkout e painel simulados | Armazenamento do navegador e sincronização entre abas; busca ausente na base |
 | Sessões e acesso | Login, logout, recuperação por OTP, papéis de administrador, proprietário e cozinha; verificações de acesso por tenant e pedido | PostgreSQL, sessão do servidor e WhatsApp para OTP |
 | Catálogo e pedidos | Catálogo público, adicionais, carrinho, entrega e retirada, checkout transacional e idempotente, rastreamento e KDS | PostgreSQL; catálogo privado e operações administrativas dependem de sessão |
 | Pagamentos | Pix no checkout, confirmação do servidor e assinatura gerenciada separadamente pelo Asaas | Provedor e webhooks autenticados para confirmação |

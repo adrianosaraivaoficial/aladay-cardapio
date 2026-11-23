@@ -41,12 +41,12 @@ export function emptySession(): DemoSession {
   return { sessionId: crypto.randomUUID(), cart: [], orders: [], selectedOrderId: null };
 }
 
-export function createOrder(session: DemoSession, expectedCart: DemoCartItem[], payment: PaymentMethod, prices: ReadonlyMap<string, number>): DemoSession {
+export function createOrder(session: DemoSession, expectedCart: DemoCartItem[], payment: PaymentMethod, priceOf: (item: DemoCartItem) => number | undefined): DemoSession {
   if (!session.cart.length || JSON.stringify(session.cart) !== JSON.stringify(expectedCart)) {
     throw new Error('O carrinho mudou. Revise os itens antes de confirmar.');
   }
   if (!paymentMethods.includes(payment) || session.cart.some(item =>
-    prices.get(item.productId) !== item.unitPrice || !Number.isSafeInteger(item.unitPrice) ||
+    priceOf(item) !== item.unitPrice || !Number.isSafeInteger(item.unitPrice) ||
     item.unitPrice <= 0 || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > maxQuantity
   )) {
     throw new Error('Revise os itens e a forma de pagamento.');

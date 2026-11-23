@@ -159,3 +159,43 @@ test('operational Pix UI recovers from charge failure and reports clipboard refu
   status = 'PAID';
   await expect(page.getByText('Pagamento Registrado')).toBeVisible();
 });
+
+test('demo search and priced complements work without changing the plain item', async ({ page }) => {
+  await page.goto(origin + '/demo');
+  const search = page.getByRole('searchbox', { name: 'Buscar na demonstração' });
+  await search.fill('hamburguer inexistente');
+  await expect(page.getByText(/Nenhum produto encontrado/)).toBeVisible();
+  await page.getByRole('button', { name: 'Limpar busca' }).click();
+  await expect(search).toBeFocused();
+  await search.fill('pao brioche');
+  await expect(page.getByRole('heading', { name: 'Burger da Casa' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Limonada da casa' })).toHaveCount(0);
+  await add(page, 'Burger da Casa');
+  await page.getByRole('button', { name: 'Escolher Burger da Casa' }).click();
+  const product = page.getByRole('dialog', { name: 'Burger da Casa' });
+  await product.getByRole('checkbox', { name: /Cheddar extra/ }).check();
+  await product.getByRole('button', { name: /Adicionar ao carrinho.*36,90/ }).click();
+  await page.getByRole('button', { name: 'Revisar pedido' }).click();
+  const checkout = page.getByRole('dialog', { name: 'Checkout simulado' });
+  await expect(checkout.getByText(/69,80/)).toBeVisible();
+  await expect(checkout.getByText('Cheddar extra')).toBeVisible();
+  await checkout.getByRole('radio', { name: 'Dinheiro simulado' }).check();
+  await checkout.getByRole('button', { name: 'Confirmar pedido simulado' }).click();
+  await expect(page.getByRole('dialog', { name: 'Pedido simulado recebido' })).toBeVisible();
+});
+
+test('landing and demo fit the requested viewport widths', async ({ page }) => {
+  await page.route('**/*', route => {
+    const url = new URL(route.request().url());
+    return url.origin === origin && !url.pathname.startsWith('/api/') ? route.continue() : route.abort();
+  });
+  for (const path of ['/', '/demo/cardapio', '/demo/painel']) {
+    await page.goto(origin + path);
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    for (const width of [320, 375, 390, 768, 1024, 1280, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      const fits = () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+      await expect.poll(fits, { message: `${path} em ${width}px` }).toBe(true);
+    }
+  }
+});
