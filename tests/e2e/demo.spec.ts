@@ -33,10 +33,10 @@ async function add(page: Page, name: string, quantity = '1') {
 test('landing opens the isolated demo and the trial returns to commercial signup', async ({ page }) => {
   await page.route('**/api/**', route => route.abort());
   await page.goto(origin);
-  const ctas = page.getByRole('link', { name: 'Abrir Demonstração Interativa' });
-  await expect(ctas).toHaveCount(2);
-  for (const cta of await ctas.all()) await expect(cta).toHaveAttribute('href', '/demo');
-  await ctas.first().click();
+  const explore = page.getByRole('link', { name: 'Explorar demonstração' });
+  await expect(explore).toHaveAttribute('href', '/demo');
+  await expect(page.getByRole('link', { name: 'Abrir Demonstração Interativa' })).toHaveAttribute('href', '/demo');
+  await explore.click();
   await expect(page).toHaveURL(origin + '/demo');
   await expect(page.getByRole('heading', { name: 'Restaurante Demonstração Aladay' })).toBeVisible();
   await expect(page.locator('[aria-current=step]')).toHaveText('Conheça o cardápio digital');

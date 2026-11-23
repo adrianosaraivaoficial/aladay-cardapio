@@ -153,17 +153,9 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     trackConversionEvent('page_view', { page_name: 'landing_home_2_0', tenant_slug: tenant.slug });
   }, [tenant.slug]);
 
+  const reelDialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
-    if (!activeReel) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setActiveReel(null);
-    };
-    document.addEventListener('keydown', onKeyDown);
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-      document.body.style.overflow = '';
-    };
+    if (activeReel && !reelDialog.current?.open) reelDialog.current?.showModal();
   }, [activeReel]);
 
   const monthlySavings = useMemo(() => {
@@ -191,61 +183,31 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
   return (
     <div className="aladay-landing -mx-4 -mt-4 overflow-hidden bg-[#f5f7fa] text-slate-950 sm:-mx-6 sm:-mt-6">
-      <section className="relative min-h-[680px] overflow-hidden bg-slate-950 text-white lg:min-h-[720px]">
-        <img
-          src="/assets/landing/aladay-hero.webp"
-          srcSet="/assets/landing/aladay-hero-mobile.webp 800w, /assets/landing/aladay-hero.webp 1200w"
-          sizes="100vw"
-          alt="Hambúrguer artesanal apresentado em ambiente de restaurante"
-          className="absolute inset-0 h-full w-full object-cover object-center opacity-60"
-          fetchPriority="high"
-          width={1200}
-          height={896}
-          decoding="async"
-        />
-        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,.98)_0%,rgba(2,6,23,.9)_45%,rgba(2,6,23,.3)_100%)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(2,6,23,.12)_0%,rgba(2,6,23,.22)_65%,rgba(2,6,23,.92)_100%)]" />
-        <div className="relative mx-auto grid min-h-[680px] max-w-7xl items-center gap-12 px-6 py-16 sm:px-10 lg:min-h-[720px] lg:grid-cols-[1.08fr_.92fr] lg:px-12">
-          <div className="relative z-10 max-w-3xl">
-            <div className="mb-7 inline-flex items-center gap-2 border border-white/20 bg-black/30 px-3 py-2 text-[11px] font-bold uppercase text-white backdrop-blur-md">
-              <span className="h-2 w-2 bg-emerald-400" />
-              Tecnologia que trabalha com o seu restaurante
-            </div>
-            <h1 className="max-w-3xl text-4xl font-extrabold leading-[1.03] sm:text-5xl lg:text-[64px]">
-              Do cardápio digital ao pedido pronto
+      <section className="overflow-hidden border-b border-aladay-line bg-aladay-brand-soft">
+        <div className="mx-auto grid max-w-7xl items-center gap-10 px-5 py-12 sm:px-10 sm:py-16 lg:grid-cols-[.9fr_1.1fr] lg:gap-10 lg:px-12 lg:py-24">
+          <div className="min-w-0">
+            <h1 className="max-w-xl text-[clamp(2.4rem,5.7vw,4.15rem)] font-extrabold leading-[1.06] tracking-[-.055em] text-aladay-ink">
+              Do cardápio digital ao pedido pronto.
             </h1>
-            <p className="mt-6 max-w-2xl text-base leading-relaxed text-slate-200 sm:text-lg">
-              Compartilhe seu cardápio por QR Code, receba pedidos pelo WhatsApp e acompanhe o preparo no painel do restaurante.
+            <p className="mt-5 max-w-lg text-base leading-relaxed text-slate-700 sm:text-lg">
+              Compartilhe seu cardápio por QR Code, acompanhe pedidos no painel e envie atualizações pelo WhatsApp.
             </p>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <button type="button" onClick={() => handleSignup('hero_primary')} className="group inline-flex min-h-12 items-center justify-center gap-2 bg-blue-600 px-6 py-3 text-sm font-bold text-white transition hover:bg-blue-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
-                Começar teste grátis
-                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+            <div className="mt-7 flex flex-wrap gap-3">
+              <button type="button" onClick={() => handleSignup('hero_primary')} className="aladay-action aladay-action-primary">
+                Testar grátis <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </button>
-              <a href="/demo" onClick={() => trackConversionEvent('view_demo_menu', { source: 'hero_secondary' })} className="inline-flex min-h-12 items-center justify-center gap-2 border border-white/25 bg-white/10 px-6 py-3 text-sm font-bold text-white backdrop-blur-md transition hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
-                <CirclePlay className="h-4 w-4" aria-hidden="true" /> Abrir Demonstração Interativa
+              <a href="/demo" onClick={() => trackConversionEvent('view_demo_menu', { source: 'hero_secondary' })} className="aladay-action border border-blue-200 bg-white text-aladay-ink hover:bg-blue-100">
+                <CirclePlay className="h-4 w-4" aria-hidden="true" /> Explorar demonstração
               </a>
             </div>
-            <div className="mt-8 flex flex-wrap gap-x-6 gap-y-3 text-xs font-semibold text-slate-300">
-              <span className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" /> 15 dias grátis</span>
-              <span className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" /> 0% de comissão</span>
-              <span className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" /> Sem instalar aplicativo</span>
-            </div>
+            <p className="mt-4 text-sm text-slate-600">15 dias de teste no plano mensal.</p>
           </div>
-          <div className="relative hidden h-[580px] items-center justify-center lg:flex" aria-label="Prévia real do cardápio digital Aladay">
-            <div className="absolute right-0 top-10 h-[530px] w-[274px] rotate-[4deg] overflow-hidden rounded-[38px] border-[9px] border-slate-900 bg-white shadow-[0_35px_90px_rgba(0,0,0,.55)]">
-              <img src={PHONE_CAPTURE} alt="Cardápio digital Aladay em smartphone" className="h-full w-full object-cover object-top" />
+          <figure className="relative min-w-0 rounded-3xl border border-blue-200 bg-white p-3 shadow-xl shadow-blue-950/10 sm:p-5">
+            <div className="mb-3 flex items-center gap-2 text-sm font-bold text-aladay-ink">
+              <LayoutDashboard className="h-4 w-4 text-aladay-brand" aria-hidden="true" /> Painel Aladay
             </div>
-            <div className="absolute bottom-16 left-2 w-64 rounded-lg border border-white/20 bg-slate-950/85 p-4 shadow-2xl backdrop-blur-xl">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center bg-emerald-500 text-white"><MessageCircle className="h-5 w-5" /></div>
-                <div><p className="text-[10px] font-bold uppercase text-emerald-300">Pedido atualizado</p><p className="mt-1 text-xs font-semibold text-white">A caminho pelo WhatsApp</p></div>
-              </div>
-            </div>
-            <div className="absolute right-44 top-24 flex items-center gap-2 rounded-lg border border-white/20 bg-white/95 px-4 py-3 text-slate-950 shadow-xl">
-              <QrCode className="h-5 w-5 text-blue-600" /><span className="text-xs font-bold">Escaneou. Abriu.</span>
-            </div>
-          </div>
+            <img src={ADMIN_CAPTURE} alt="Captura do painel Aladay com a visão operacional do restaurante" className="aspect-[16/10] w-full rounded-xl border border-aladay-line bg-aladay-background object-cover object-top" fetchPriority="high" decoding="async" />
+          </figure>
         </div>
       </section>
 
@@ -421,7 +383,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               return (
                 <div key={item.question} className="border-b border-slate-200">
                   <button type="button" onClick={() => setOpenFaq(isOpen ? null : index)} aria-expanded={isOpen} aria-controls={`faq-answer-${index}`} className="flex w-full items-center justify-between gap-6 py-6 text-left text-base font-bold sm:text-lg"><span>{item.question}</span><ChevronDown className={`h-5 w-5 shrink-0 text-blue-600 transition-transform ${isOpen ? 'rotate-180' : ''}`} /></button>
-                  <AnimatePresence initial={false}>{isOpen && <motion.div id={`faq-answer-${index}`} initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden"><p className="max-w-3xl pb-6 text-sm leading-relaxed text-slate-600">{item.answer}</p></motion.div>}</AnimatePresence>
+                  <AnimatePresence initial={false}>{isOpen && <motion.div id={`faq-answer-${index}`} initial={reduceMotion ? false : { height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={reduceMotion ? undefined : { height: 0, opacity: 0 }} className="overflow-hidden"><p className="max-w-3xl pb-6 text-sm leading-relaxed text-slate-600">{item.answer}</p></motion.div>}</AnimatePresence>
                 </div>
               );
             })}
@@ -444,18 +406,22 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         </div>
       </footer>
 
-      <AnimatePresence>
-        {activeReel && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} role="dialog" aria-modal="true" aria-label={activeReel.title} className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/95 p-4 backdrop-blur-md" onClick={() => setActiveReel(null)}>
-            <button type="button" onClick={() => setActiveReel(null)} aria-label="Fechar vídeo" className="absolute right-5 top-5 flex h-11 w-11 items-center justify-center border border-white/20 text-white hover:bg-white hover:text-slate-950"><X className="h-5 w-5" /></button>
-            <div className="relative aspect-[9/16] h-[80vh] max-h-[760px] overflow-hidden rounded-lg bg-black shadow-2xl" onClick={(event) => event.stopPropagation()}>
-              {activeReel.videoSrc ? <video src={activeReel.videoSrc} poster={activeReel.poster} controls playsInline preload="metadata" className="h-full w-full object-cover" /> : (
-                <div className="relative h-full w-full"><img src={activeReel.poster} alt={activeReel.posterAlt} className="h-full w-full object-cover object-top opacity-75" /><div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black/20" /><div className="absolute inset-x-6 bottom-8 text-white"><p className="text-[10px] font-bold uppercase text-sky-400">Demonstração visual</p><h3 className="mt-2 text-2xl font-bold">{activeReel.title}</h3><p className="mt-3 text-sm leading-relaxed text-slate-300">A estrutura aceita arquivos MP4 e WebM. Enquanto o vídeo oficial não é publicado, esta captura real preserva a fidelidade ao produto.</p></div></div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <dialog ref={reelDialog} onClose={() => setActiveReel(null)} aria-label={activeReel?.title} className="fixed inset-0 m-auto max-h-[92dvh] w-[min(92vw,29rem)] rounded-2xl bg-slate-950 p-4 text-white backdrop:bg-slate-950/85">
+        {activeReel && <>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-base font-bold">{activeReel.title}</h2>
+            <button type="button" onClick={() => reelDialog.current?.close()} aria-label="Fechar vídeo" className="aladay-action hover:bg-white/15"><X className="h-5 w-5" /></button>
+          </div>
+          {activeReel.videoSrc ? (
+            <video src={activeReel.videoSrc} poster={activeReel.poster} controls muted playsInline preload="none" className="max-h-[70dvh] w-full rounded-xl bg-black" />
+          ) : (
+            <figure>
+              <img src={activeReel.poster} alt={activeReel.posterAlt} className="mx-auto max-h-[62dvh] w-full rounded-xl object-contain" />
+              <figcaption className="mt-3 text-sm text-slate-300">Captura do produto. O vídeo oficial ainda não está disponível.</figcaption>
+            </figure>
+          )}
+        </>}
+      </dialog>
 
       {cookieConsent === 'pending' && (
         <div className="fixed bottom-4 left-4 right-4 z-[70] rounded-lg border border-slate-300 bg-white p-5 text-xs shadow-2xl sm:left-auto sm:right-6 sm:max-w-md">
