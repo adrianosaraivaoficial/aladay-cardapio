@@ -1,3 +1,5 @@
+import { priceOrderItems } from './backend/order-items';
+import { mountGarcom } from './backend/garcom';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -157,7 +159,7 @@ function redactStartupDiagnostic(message: string): string {
 }
 
 function getInitSqlScript(): string {
-  return ['easypanel-init.sql', 'intelligence.sql', 'crm.sql', 'menu-import.sql', 'analytics.sql', 'upsell.sql', 'feedback.sql']
+  return ['easypanel-init.sql', 'intelligence.sql', 'crm.sql', 'menu-import.sql', 'analytics.sql', 'upsell.sql', 'feedback.sql', 'garcom.sql']
     .filter(name => fs.existsSync(path.join(__dirname, 'database', name)))
     .map(name => fs.readFileSync(path.join(__dirname, 'database', name), 'utf8')).join('\n');
 }
@@ -463,7 +465,7 @@ async function startServer() {
       if (header.alg !== 'HS256' || header.typ !== 'JWT') return null;
       const claims = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
       const nowSec = Math.floor(Date.now() / 1000);
-      if (!claims || !claims.sub || !['SUPER_ADMIN', 'TENANT_OWNER', 'KITCHEN_STAFF'].includes(claims.role) || !Number.isInteger(claims.exp) || claims.exp <= nowSec || claims.iss !== 'https://aladay.com.br' || claims.aud !== 'aladay-api' || !claims.jti) {
+      if (!claims || !claims.sub || !['SUPER_ADMIN', 'TENANT_OWNER', 'KITCHEN_STAFF', 'GARCOM_STAFF'].includes(claims.role) || !Number.isInteger(claims.exp) || claims.exp <= nowSec || claims.iss !== 'https://aladay.com.br' || claims.aud !== 'aladay-api' || !claims.jti) {
         return null;
       }
 
@@ -645,6 +647,15 @@ async function startServer() {
       }
       const scoped = pathname.match(/^\/api\/v1\/(?:tenants|asaas\/subscription)\/([^/]+)/);
       const claims = getAuthenticatedClaims(req);
+      const garcom = pathname.match(/^\/api\/v1\/tenants\/([a-z0-9-]+)\/garcom\/(tables|catalog|tabs(?:\/[a-f0-9-]{36}(?:\/(?:items|submit))?)?|settings|staff(?:\/garcom_[a-f0-9-]{36})?)$/);
+      if (garcom) {
+        if (!claims) return res.status(401).json({ error: 'Sessão necessária.' });
+        if (claims.role !== 'SUPER_ADMIN' && claims.tenant_slug !== garcom[1]) return res.status(403).json({ error: 'Restaurante fora do escopo da sessão.' });
+        return authenticateToken(req, res, next);
+      }
+      if (claims?.role === 'GARCOM_STAFF' && !['/api/v1/auth/session', '/api/v1/auth/logout'].includes(pathname)) {
+        return res.status(403).json({ error: 'Perfil sem permissão para esta operação.' });
+      }
       if (scoped && !canAccessTenant(claims, decodeURIComponent(scoped[1]))) return res.status(403).json({ error: 'Restaurante fora do escopo da sessão.' });
       if (claims?.role === 'KITCHEN_STAFF' && req.method !== 'GET' && !/^\/api\/v1\/orders\/[^/]+\/status$/.test(pathname)) return res.status(403).json({ error: 'Perfil sem permissão para esta alteração.' });
 
@@ -1055,6 +1066,7 @@ async function startServer() {
   mountMenuImport(app, databasePool, intelligenceGuard, hydrateTenantCatalogFromDb);
   mountMenuImportAi(app, databasePool, intelligenceGuard);
   mountCrm(app, databasePool, requireTenantAccess('slug'));
+  mountGarcom(app, databasePool, authRateLimit, hashPassword);
   mountAnalytics(app, databasePool, intelligenceGuard, requireSuperAdmin);
   mountUpsell(app, databasePool, intelligenceGuard);
   mountFeedback(app, databasePool, intelligenceGuard);
@@ -1121,74 +1133,7 @@ async function startServer() {
     if(row.subscription_access_until && new Date(row.subscription_access_until).getTime()<=Date.now()) return res.status(409).json({error:'Assinatura do restaurante expirada.'});
     if (!tenant.isOpen) return res.status(409).json({error:'O restaurante está fechado.'});
     if (!['active','trial'].includes(tenant.subscriptionStatus || '') || (tenant.subscriptionStatus==='trial' && (!tenant.trialEndsAt || new Date(tenant.trialEndsAt).getTime()<=Date.now()))) return res.status(409).json({error:'Restaurante temporariamente indisponível para pedidos.'});
-    let subtotalCents = 0;
-    const validatedItems: any[] = [];
-    for (const item of items) {
-      if (!item || typeof item !== 'object') return res.status(400).json({ error: 'Item inválido.' });
-      const catalogProduct = checkoutProducts.find(
-        (p) => p.id === item.productId && p.tenantSlug?.toLowerCase() === tenant.slug.toLowerCase()
-      );
-      if (!catalogProduct || catalogProduct.isAvailable === false) {
-        return res.status(409).json({ error: 'Um item do carrinho não existe ou não está disponível.' });
-      }
-      const unitPriceCents = Math.max(0, Number(catalogProduct.priceCents) || 0);
-      const quantity = Number(item.quantity);
-      if (!Number.isInteger(quantity) || quantity < 1 || quantity > 99) {
-        return res.status(400).json({ error: `Quantidade inválida para ${catalogProduct.name}.` });
-      }
-
-      let optionsTotalCents = 0;
-      const validatedOptions: any[] = [];
-      const requestedOptions = Array.isArray(item.selectedOptions) ? item.selectedOptions : [];
-      const optionGroups = Array.isArray(catalogProduct.optionGroups) ? catalogProduct.optionGroups : [];
-      for (const group of optionGroups) {
-        const selectedIds = Array.from(
-          new Set(
-            requestedOptions
-              .filter((option: any) => String(option.groupId || '') === String(group.id))
-              .map((option: any) => String(option.itemId || ''))
-              .filter(Boolean)
-          )
-        );
-        const minSelections = Math.max(group.required ? 1 : 0, Number(group.minSelections) || 0);
-        const maxSelections = Math.max(minSelections, Number(group.maxSelections) || group.items?.length || 1);
-        if (selectedIds.length < minSelections || selectedIds.length > maxSelections) {
-          return res.status(400).json({ error: `Seleção inválida no grupo ${group.name}.` });
-        }
-        for (const selectedId of selectedIds) {
-          const matchedOption = Array.isArray(group.items)
-            ? group.items.find((option: any) => String(option.id) === selectedId)
-            : undefined;
-          if (!matchedOption) {
-            return res.status(400).json({ error: `Opção inválida no produto ${catalogProduct.name}.` });
-          }
-          const optionPriceCents = Math.max(0, Number(matchedOption.priceCents) || 0);
-          optionsTotalCents += optionPriceCents;
-          validatedOptions.push({
-            groupId: String(group.id),
-            groupName: String(group.name || '').slice(0, 80),
-            itemId: String(matchedOption.id),
-            itemName: String(matchedOption.name || '').slice(0, 100),
-            priceCents: optionPriceCents,
-          });
-        }
-      }
-      if (requestedOptions.length !== validatedOptions.length) {
-        return res.status(400).json({ error: `Há opções desconhecidas no produto ${catalogProduct.name}.` });
-      }
-
-      const calculatedItemTotal = (unitPriceCents + optionsTotalCents) * quantity;
-      subtotalCents += calculatedItemTotal;
-      validatedItems.push({
-        productId: String(catalogProduct.id),
-        productName: String(catalogProduct.name).slice(0, 100),
-        unitPriceCents,
-        quantity,
-        selectedOptions: validatedOptions,
-        notes: item.notes ? String(item.notes).trim().slice(0, 300) : undefined,
-        totalCents: calculatedItemTotal,
-      });
-    }
+    const { subtotalCents, validatedItems } = priceOrderItems(items, checkoutProducts, tenant);
 
     if (subtotalCents < Math.max(0, tenant.minOrderCents || 0)) {
       return res.status(409).json({ error: 'O pedido não atingiu o valor mínimo do restaurante.' });
@@ -1732,7 +1677,9 @@ async function startServer() {
     if (status === 'confirmed' && order.payment_method === 'Pix' && order.payment_status !== 'paid_online') return res.status(409).json({error:'Aguardando confirmação do pagamento Pix.'});
     if (status !== order.status) {
       await client.query('UPDATE orders SET status=$1,updated_at=NOW() WHERE id=$2 AND tenant_slug=$3',[status,order.id,order.tenant_slug]);
-      await enqueue(client,order.tenant_id,order.id,'order.status_changed',{orderId:order.id,tenantSlug:order.tenant_slug,status});
+      const garcomOrder = order.order_type === 'dine_in' && !order.customer_phone &&
+        (await client.query('SELECT 1 FROM garcom_tab_items WHERE order_id=$1 AND tenant_id=$2 LIMIT 1', [order.id, order.tenant_id])).rowCount;
+      if (!garcomOrder) await enqueue(client,order.tenant_id,order.id,'order.status_changed',{orderId:order.id,tenantSlug:order.tenant_slug,status});
     }
     afterCommit(()=>{void hydrateOrderFromDbById(order.id);});
     res.json({success:true,data:{id:order.id,status}});
@@ -3912,7 +3859,7 @@ async function startServer() {
     email: string;
     passwordHash: string;
     phone: string;
-    role: 'SUPER_ADMIN' | 'TENANT_OWNER' | 'KITCHEN_STAFF';
+    role: 'SUPER_ADMIN' | 'TENANT_OWNER' | 'KITCHEN_STAFF' | 'GARCOM_STAFF';
     tenantId: string | '*';
     tenantSlug: string | '*';
     tenantName: string;
@@ -4009,7 +3956,7 @@ async function startServer() {
     timestamp: string;
     userEmail: string;
     userName: string;
-    role: 'SUPER_ADMIN' | 'TENANT_OWNER' | 'KITCHEN_STAFF';
+    role: 'SUPER_ADMIN' | 'TENANT_OWNER' | 'KITCHEN_STAFF' | 'GARCOM_STAFF';
     tenantSlug: string;
     method: 'password' | 'whatsapp_otp';
     ip: string;

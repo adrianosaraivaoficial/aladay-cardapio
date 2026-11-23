@@ -227,3 +227,61 @@ test('mobile navigation opens a drawer and returns focus after selection', async
   await expect(trigger).toBeFocused();
   await expect(page.getByText('Gestão de Pedidos (KDS)', { exact: true }).filter({ visible: true }).first()).toBeVisible();
 });
+
+test('Garçom signs in, opens a tab and refreshes after reconnecting', async ({ page, context, request }) => {
+  const flag = await request.put('/api/v1/tenants/' + slug + '/garcom/settings', {
+    headers: { Authorization: 'Bearer ' + adminSession.token }, data: { enabled: true },
+  });
+  expect(flag.ok()).toBe(true);
+  const category = 'garcom-cat-' + suffix;
+  const product = 'garcom-product-' + suffix;
+  await pool.query('INSERT INTO categories(id,tenant_id,tenant_slug,name) VALUES($1,$2,$2,$3)', [category, slug, 'Salão']);
+  await pool.query('INSERT INTO products(id,tenant_id,tenant_slug,category_id,name,price_cents,option_groups) VALUES($1,$2,$2,$3,$4,2500,$5)',
+    [product, slug, category, 'Prato do salão', JSON.stringify([{ id: 'side', name: 'Acompanhamento', required: true, minSelections: 1, maxSelections: 1, items: [{ id: 'rice', name: 'Arroz', priceCents: 300 }] }])]);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+  await page.goto('/app/garcom');
+  await expect(page).toHaveURL(origin + '/app/garcom/');
+  await page.locator('input[type=email]').fill(email);
+  await page.locator('input[type=password]').fill(password);
+  await page.getByRole('button', { name: 'Entrar no Painel' }).click();
+  const table = page.getByRole('button', { name: /Mesa 1 Livre/ });
+  await table.click();
+
+  await context.setOffline(true);
+  await expect(page.getByText(/Sem conexão/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Abrir comanda' })).toBeDisabled();
+  const reconnect = page.waitForResponse(response => response.url().endsWith('/garcom/tables') && response.ok());
+  await context.setOffline(false);
+  await reconnect;
+
+  const open = page.getByRole('button', { name: 'Abrir comanda' });
+  await open.evaluate((button: HTMLButtonElement) => { button.click(); button.click(); });
+  await expect(page.getByRole('button', { name: /Mesa 1 Ocupada/ })).toBeVisible();
+  const result = await pool.query("SELECT count(*)::int AS total FROM garcom_tabs WHERE tenant_id=$1 AND table_number=1", [slug]);
+  expect(result.rows[0].total).toBe(1);
+  await page.reload();
+  await page.getByRole('button', { name: /Mesa 1 Ocupada/ }).click();
+  await page.getByLabel('Produto').selectOption(product);
+  await expect(page.getByRole('button', { name: 'Adicionar à comanda' })).toBeDisabled();
+  await page.getByRole('checkbox', { name: /Arroz/ }).check();
+  await page.getByLabel('Quantidade').fill('2');
+  await page.getByLabel('Observações').fill('Sem cebola');
+  await page.getByRole('button', { name: 'Adicionar à comanda' }).click();
+  await expect(page.getByText('Sem cebola', { exact: true })).toBeVisible();
+  const send = page.getByRole('button', { name: 'Enviar à cozinha' });
+  const sent = page.waitForResponse(response => response.url().endsWith('/submit') && response.ok());
+  await send.evaluate((button: HTMLButtonElement) => { button.click(); button.click(); });
+  const data = await (await sent).json();
+  const order = await pool.query('SELECT total_cents,payment_status FROM orders WHERE id=$1 AND tenant_id=$2', [data.data.orderId, slug]);
+  expect(order.rows).toEqual([{ total_cents: 5600, payment_status: 'pending' }]);
+  const status = await request.patch('/api/v1/orders/' + data.data.orderId + '/status', {
+    headers: { Authorization: 'Bearer ' + session.token },
+    data: { status: 'confirmed' },
+  });
+  expect(status.ok()).toBe(true);
+  const events = await pool.query('SELECT count(*)::int AS total FROM outbox_events WHERE aggregate_id=$1', [data.data.orderId]);
+  expect(events.rows[0].total).toBe(0);
+  await page.getByRole('button', { name: 'Atualizar', exact: true }).click();
+  await expect(page.getByText('Confirmado', { exact: true })).toBeVisible();
+});

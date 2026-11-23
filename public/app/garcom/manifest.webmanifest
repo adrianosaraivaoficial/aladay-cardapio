@@ -1,0 +1,15 @@
+{
+  "id": "/app/garcom/",
+  "name": "Aladay Garçom",
+  "short_name": "Aladay Garçom",
+  "start_url": "/app/garcom/",
+  "scope": "/app/garcom/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#2563eb",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
