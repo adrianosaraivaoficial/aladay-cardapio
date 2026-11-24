@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import {
-  ArrowRight, BarChart3, Check, ChevronDown, ChevronLeft, ChevronRight,
-  CirclePlay, LayoutDashboard, MenuSquare, MessageCircle,
-  Play, QrCode, ScanLine, ShieldCheck, Smartphone, Sparkles, Upload, X,
+  ArrowRight, Check, ChevronDown, ChevronLeft, ChevronRight,
+  CirclePlay, LayoutDashboard, MessageCircle,
+  Play, QrCode, ShieldCheck, Smartphone, Sparkles, X,
 } from 'lucide-react';
+import { catalog } from '../demo/catalog';
 import { AuthSession, RestaurantTenant } from '../types';
 import {
   ConsentStatus, getConsentStatus, initGA4, setConsentStatus, trackConversionEvent,
@@ -14,7 +15,7 @@ interface LandingPageViewProps {
   tenant: RestaurantTenant;
   authSession: AuthSession | null;
   onNavigateToLogin: () => void;
-  onNavigateToSetup: () => void;
+  onNavigateToSetup: (plan?: 'YEARLY') => void;
   onNavigateToAdmin: () => void;
   onNavigateToTerms?: () => void;
   onNavigateToPrivacy?: () => void;
@@ -32,7 +33,6 @@ interface DemoScreen {
 interface Reel {
   id: string;
   title: string;
-  duration: string;
   poster: string;
   posterAlt: string;
   videoSrc?: string;
@@ -45,12 +45,9 @@ const PHONE_CAPTURE = '/assets/landing/aladay-cardapio.webp';
 const WHATSAPP_CAPTURE = '/assets/landing/aladay-whatsapp.webp';
 
 const FEATURES = [
-  { icon: Smartphone, title: 'Cardápio digital responsivo', description: 'Uma vitrine rápida e organizada para o cliente escolher pelo próprio celular.' },
-  { icon: QrCode, title: 'Acesso por QR Code', description: 'Leve o cliente direto ao cardápio da loja, no salão, na embalagem ou no balcão.' },
-  { icon: MessageCircle, title: 'Pedidos no WhatsApp', description: 'Centralize o contato e envie atualizações pelo canal que o cliente já usa.' },
-  { icon: MenuSquare, title: 'Produtos e categorias', description: 'Organize preços, adicionais, fotos e disponibilidade em uma operação mais simples.' },
-  { icon: LayoutDashboard, title: 'Painel e KDS', description: 'Acompanhe os pedidos em uma visão operacional clara para atendimento e cozinha.' },
-  { icon: BarChart3, title: 'Gestão do restaurante', description: 'Consulte vendas, clientes, mesas e indicadores disponíveis na plataforma.' },
+  { icon: QrCode, title: 'No salão', description: 'Compartilhe o QR Code na mesa ou no balcão para o cliente abrir o cardápio pelo celular.' },
+  { icon: MessageCircle, title: 'No delivery', description: 'Divulgue o link do seu cardápio e envie atualizações do pedido pelo WhatsApp.' },
+  { icon: LayoutDashboard, title: 'Na cozinha', description: 'Acompanhe os pedidos no painel e atualize o status conforme o preparo avança.' },
 ];
 
 const DEMO_SCREENS: DemoScreen[] = [
@@ -72,10 +69,10 @@ const DEMO_SCREENS: DemoScreen[] = [
 ];
 
 const REELS: Reel[] = [
-  { id: 'digital-menu', title: 'O cardápio na mão do cliente', duration: '01', poster: PHONE_CAPTURE, posterAlt: 'Prévia vertical do cardápio digital Aladay' },
-  { id: 'order-flow', title: 'Do produto ao carrinho', duration: '02', poster: PRODUCT_CAPTURE, posterAlt: 'Prévia vertical da seleção de produtos no Aladay' },
-  { id: 'whatsapp', title: 'Atualizações pelo WhatsApp', duration: '03', poster: WHATSAPP_CAPTURE, posterAlt: 'Prévia vertical do atendimento pelo WhatsApp' },
-  { id: 'restaurant-panel', title: 'A rotina no painel', duration: '04', poster: ADMIN_CAPTURE, posterAlt: 'Captura do painel demonstrativo Aladay' },
+  { id: 'digital-menu', title: 'O cardápio na mão do cliente', poster: PHONE_CAPTURE, posterAlt: 'Prévia vertical do cardápio digital Aladay' },
+  { id: 'order-flow', title: 'Do produto ao carrinho', poster: PRODUCT_CAPTURE, posterAlt: 'Prévia vertical da seleção de produtos no Aladay' },
+  { id: 'whatsapp', title: 'Atualizações pelo WhatsApp', poster: WHATSAPP_CAPTURE, posterAlt: 'Prévia vertical do atendimento pelo WhatsApp' },
+  { id: 'restaurant-panel', title: 'A rotina no painel', poster: ADMIN_CAPTURE, posterAlt: 'Captura do painel demonstrativo Aladay' },
 ];
 
 const FAQS = [
@@ -101,14 +98,8 @@ const FAQS = [
   },
   {
     question: 'Como funciona o teste gratuito?',
-    answer: 'O plano mensal inclui 15 dias de teste gratuito. Nesse período, o restaurante pode experimentar os recursos antes da cobrança mensal de R$ 129,90.',
+    answer: 'Você pode testar a plataforma por 15 dias sem informar um cartão. Ao fim do teste, escolha um plano para continuar usando a Aladay.',
   },
-];
-
-const HOW_IT_WORKS = [
-  { number: '01', icon: Upload, title: 'Configure seu cardápio', description: 'Organize produtos e categorias e deixe o menu digital pronto para receber clientes.' },
-  { number: '02', icon: ScanLine, title: 'Compartilhe seu QR Code', description: 'Divulgue no salão, nas redes sociais, no balcão e nas embalagens do restaurante.' },
-  { number: '03', icon: MessageCircle, title: 'Receba e acompanhe pedidos', description: 'Centralize a operação no painel e mantenha o cliente informado pelo WhatsApp.' },
 ];
 
 const FadeIn = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => {
@@ -167,12 +158,15 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   const formatBRL = (value: number) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
-  const handleSignup = (source: string, cycle = planCycle) => {
+  const demoProduct = catalog[0];
+  const demoPrice = formatBRL(demoProduct.price / 100);
+
+  const handleSignup = (source: string, cycle: 'YEARLY' | 'MONTHLY' = 'MONTHLY') => {
     trackConversionEvent('click_signup', {
       source,
       plan: cycle === 'YEARLY' ? 'pro_99_yearly' : 'pro_129_90',
     });
-    onNavigateToSetup();
+    onNavigateToSetup(cycle === 'YEARLY' ? 'YEARLY' : undefined);
   };
 
   const openSupportWhatsApp = () => {
@@ -194,19 +188,44 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <button type="button" onClick={() => handleSignup('hero_primary')} className="aladay-action aladay-action-primary">
-                Testar grátis <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                Testar grátis por 15 dias <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </button>
               <a href="/demo" onClick={() => trackConversionEvent('view_demo_menu', { source: 'hero_secondary' })} className="aladay-action border border-blue-200 bg-white text-aladay-ink hover:bg-blue-100">
-                <CirclePlay className="h-4 w-4" aria-hidden="true" /> Explorar demonstração
+                <CirclePlay className="h-4 w-4" aria-hidden="true" /> Fazer um pedido na demo
               </a>
             </div>
-            <p className="mt-4 text-sm text-slate-600">15 dias de teste no plano mensal.</p>
+            <p className="mt-4 text-sm text-slate-600">Sem cartão para começar.</p>
           </div>
-          <figure className="relative min-w-0 rounded-3xl border border-blue-200 bg-white p-3 shadow-xl shadow-blue-950/10 sm:p-5">
-            <div className="mb-3 flex items-center gap-2 text-sm font-bold text-aladay-ink">
-              <LayoutDashboard className="h-4 w-4 text-aladay-brand" aria-hidden="true" /> Painel demonstrativo Aladay
+          <figure className="min-w-0 rounded-3xl border border-blue-200 bg-gradient-to-br from-white via-white to-orange-50 p-4 shadow-xl shadow-blue-950/10 sm:p-6">
+            <figcaption className="mb-4 text-sm font-semibold text-slate-600">Um pedido na demonstração</figcaption>
+            <div className="grid items-center gap-3 min-[480px]:grid-cols-[.85fr_auto_1fr]">
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <p className="flex items-center gap-2 px-4 py-3 text-sm font-bold text-aladay-ink">
+                  <Smartphone className="size-4 text-aladay-brand" aria-hidden="true" /> No celular
+                </p>
+                <img src={demoProduct.image} alt="" className="aspect-[16/9] w-full object-cover" fetchPriority="high" decoding="async" />
+                <div className="flex flex-wrap justify-between gap-x-3 px-4 py-3 text-sm text-slate-900">
+                  <span className="font-semibold">{demoProduct.name}</span>
+                  <strong>{demoPrice}</strong>
+                </div>
+              </div>
+              <ArrowRight aria-hidden="true" className="mx-auto size-5 rotate-90 text-blue-700 min-[480px]:rotate-0" />
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <p className="flex items-center gap-2 bg-aladay-ink px-4 py-3 text-sm font-bold text-white">
+                  <LayoutDashboard className="size-4" aria-hidden="true" /> No painel da cozinha
+                </p>
+                <div className="space-y-3 px-4 py-4 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-slate-600">#DEMO-001</span>
+                    <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-900">Em preparo</span>
+                  </div>
+                  <div className="flex flex-wrap justify-between gap-x-3 border-t border-slate-200 pt-3 text-slate-900">
+                    <span>1 × {demoProduct.name}</span>
+                    <strong>{demoPrice}</strong>
+                  </div>
+                </div>
+              </div>
             </div>
-            <img src={ADMIN_CAPTURE} alt="Captura do painel demonstrativo Aladay com indicadores e um pedido fictício" className="aspect-[1000/728] w-full rounded-xl border border-aladay-line bg-aladay-background object-contain" fetchPriority="high" decoding="async" />
           </figure>
         </div>
       </section>
@@ -215,7 +234,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         <div className="mx-auto grid max-w-7xl grid-cols-2 divide-x divide-slate-200 px-6 sm:grid-cols-4 sm:px-10 lg:px-12">
           {[
             ['0%', 'comissão nas vendas diretas'],
-            ['15 dias', 'de teste no plano mensal'],
+            ['15 dias', 'de teste sem cartão'],
             ['R$ 99', 'por mês no plano anual'],
             ['24/7', 'cardápio disponível online'],
           ].map(([value, label]) => (
@@ -228,15 +247,13 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         <div className="mx-auto max-w-7xl">
           <FadeIn className="max-w-3xl">
             <p className="text-xs font-extrabold uppercase text-blue-600">Da vitrine à cozinha</p>
-            <h2 className="mt-4 text-3xl font-extrabold leading-tight sm:text-5xl">Tudo que seu restaurante precisa para começar a vender digitalmente.</h2>
-            <p className="mt-5 max-w-2xl text-base leading-relaxed text-slate-600">Uma jornada conectada para apresentar produtos, receber pedidos e organizar a rotina sem tirar do restaurante o controle da própria operação.</p>
+            <h2 className="mt-4 text-3xl font-extrabold leading-tight sm:text-5xl">Do atendimento à cozinha</h2>
           </FadeIn>
           <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {FEATURES.map((feature, index) => (
-              <FadeIn key={feature.title} className="group min-h-56 rounded-lg border border-slate-200 bg-white p-7 transition-colors hover:bg-slate-50">
+            {FEATURES.map((feature) => (
+              <FadeIn key={feature.title} className="group rounded-2xl border border-slate-200 bg-white p-7 transition-colors hover:bg-slate-50">
                 <div className="flex h-11 w-11 items-center justify-center bg-slate-950 text-white transition-colors group-hover:bg-blue-600"><feature.icon className="h-5 w-5" /></div>
-                <p className="mt-7 text-[11px] font-bold text-blue-600">0{index + 1}</p>
-                <h3 className="mt-2 text-lg font-bold">{feature.title}</h3>
+                <h3 className="mt-4 text-lg font-bold">{feature.title}</h3>
                 <p className="mt-3 text-sm leading-relaxed text-slate-600">{feature.description}</p>
               </FadeIn>
             ))}
@@ -249,11 +266,11 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           <FadeIn className="flex flex-col justify-between gap-8 lg:flex-row lg:items-end">
             <div className="max-w-3xl">
               <p className="text-xs font-extrabold uppercase text-sky-400">Do cardápio ao painel</p>
-              <h2 className="mt-4 text-3xl font-extrabold sm:text-5xl">Veja a Aladay em ação.</h2>
+              <h2 className="mt-4 text-3xl font-extrabold sm:text-5xl">Veja um pedido do começo ao fim</h2>
               <p className="mt-5 max-w-2xl text-base leading-relaxed text-slate-400">Monte um pedido em um cardápio fictício e acompanhe o preparo no painel. Nas capturas abaixo, conheça as telas que você usará no seu restaurante.</p>
             </div>
             <a href="/demo" onClick={() => trackConversionEvent('view_demo_menu', { source: 'interactive_demo_cta' })} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold transition hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
-              Abrir Demonstração Interativa <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              Fazer um pedido na demo <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </a>
           </FadeIn>
           <div className="mt-12 grid gap-10 lg:grid-cols-[.76fr_1.24fr] lg:items-center">
@@ -280,64 +297,31 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               </AnimatePresence>
             </div>
           </div>
-        </div>
-      </section>
-
-      <section className="bg-white px-6 py-20 sm:px-10 lg:py-28">
-        <div className="mx-auto max-w-7xl">
-          <FadeIn className="flex items-end justify-between gap-6">
-            <div className="max-w-2xl"><p className="text-xs font-extrabold uppercase text-blue-600">Demonstrações rápidas</p><h2 className="mt-4 text-3xl font-extrabold sm:text-5xl">Veja como é simples usar a Aladay.</h2></div>
-            <div className="hidden gap-2 sm:flex">
-              <button type="button" onClick={() => reelsRef.current?.scrollBy({ left: -320, behavior: reduceMotion ? 'auto' : 'smooth' })} aria-label="Ver vídeos anteriores" className="flex h-11 w-11 items-center justify-center border border-slate-300 transition hover:bg-slate-950 hover:text-white"><ChevronLeft className="h-5 w-5" /></button>
-              <button type="button" onClick={() => reelsRef.current?.scrollBy({ left: 320, behavior: reduceMotion ? 'auto' : 'smooth' })} aria-label="Ver próximos vídeos" className="flex h-11 w-11 items-center justify-center border border-slate-300 transition hover:bg-slate-950 hover:text-white"><ChevronRight className="h-5 w-5" /></button>
+          <div className="mt-14 border-t border-white/15 pt-8">
+            <FadeIn className="flex items-end justify-between gap-6">
+              <h3 className="text-xl font-bold">Mais telas da Aladay</h3>
+              <div className="hidden gap-2 sm:flex">
+                <button type="button" onClick={() => reelsRef.current?.scrollBy({ left: -320, behavior: reduceMotion ? 'auto' : 'smooth' })} aria-label="Ver prévias anteriores" className="flex h-11 w-11 items-center justify-center border border-slate-300 transition hover:bg-slate-950 hover:text-white"><ChevronLeft className="h-5 w-5" /></button>
+                <button type="button" onClick={() => reelsRef.current?.scrollBy({ left: 320, behavior: reduceMotion ? 'auto' : 'smooth' })} aria-label="Ver próximas prévias" className="flex h-11 w-11 items-center justify-center border border-slate-300 transition hover:bg-slate-950 hover:text-white"><ChevronRight className="h-5 w-5" /></button>
+              </div>
+            </FadeIn>
+            <div ref={reelsRef} className="mt-10 flex snap-x snap-mandatory gap-4 overflow-x-auto pb-4">
+              {REELS.map((reel) => (
+                <button key={reel.id} type="button" onClick={() => setActiveReel(reel)} className="group relative aspect-[4/3] w-[220px] shrink-0 snap-start overflow-hidden rounded-lg bg-slate-900 text-left sm:w-[245px]">
+                  <img src={reel.poster} alt={reel.posterAlt} className="h-full w-full object-cover object-top opacity-80 transition duration-500 group-hover:scale-[1.03] group-hover:opacity-65" loading="lazy" decoding="async" />
+                  <span className="absolute inset-0 bg-gradient-to-t from-black via-black/10 to-transparent" />
+                  {reel.videoSrc && <span className="absolute left-1/2 top-1/2 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white text-slate-950 shadow-xl transition group-hover:scale-110"><Play className="ml-1 h-5 w-5 fill-current" /></span>}
+                  <span className="absolute bottom-5 left-5 right-5 text-lg font-bold text-white">{reel.title}</span>
+                </button>
+              ))}
             </div>
-          </FadeIn>
-          <div ref={reelsRef} className="mt-10 flex snap-x snap-mandatory gap-4 overflow-x-auto pb-4">
-            {REELS.map((reel) => (
-              <button key={reel.id} type="button" onClick={() => setActiveReel(reel)} className="group relative aspect-[9/16] w-[250px] shrink-0 snap-start overflow-hidden rounded-lg bg-slate-900 text-left sm:w-[280px]">
-                <img src={reel.poster} alt={reel.posterAlt} className="h-full w-full object-cover object-top opacity-80 transition duration-500 group-hover:scale-[1.03] group-hover:opacity-65" loading="lazy" decoding="async" />
-                <span className="absolute inset-0 bg-gradient-to-t from-black via-black/10 to-transparent" />
-                <span className="absolute left-4 top-4 border border-white/30 bg-black/45 px-2 py-1 text-[10px] font-bold text-white backdrop-blur">EP. {reel.duration}</span>
-                <span className="absolute left-1/2 top-1/2 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white text-slate-950 shadow-xl transition group-hover:scale-110"><Play className="ml-1 h-5 w-5 fill-current" /></span>
-                <span className="absolute bottom-5 left-5 right-5 text-lg font-bold text-white">{reel.title}</span>
-              </button>
-            ))}
           </div>
         </div>
-      </section>
-
-      <section className="border-y border-slate-200 bg-[#f5f7fa] px-6 py-20 sm:px-10 lg:py-28">
-        <div className="mx-auto max-w-7xl">
-          <FadeIn className="text-center"><p className="text-xs font-extrabold uppercase text-blue-600">Comece em três movimentos</p><h2 className="mx-auto mt-4 max-w-3xl text-3xl font-extrabold sm:text-5xl">Do primeiro cadastro ao primeiro pedido.</h2></FadeIn>
-          <div className="relative mt-14 grid gap-8 lg:grid-cols-3">
-            <div className="absolute left-[17%] right-[17%] top-10 hidden h-px bg-slate-300 lg:block" />
-            {HOW_IT_WORKS.map((step) => (
-              <FadeIn key={step.number} className="relative bg-[#f5f7fa] text-center">
-                <div className="relative z-10 mx-auto flex h-20 w-20 items-center justify-center border border-slate-300 bg-white text-blue-600 shadow-sm"><step.icon className="h-7 w-7" /></div>
-                <p className="mt-6 text-[11px] font-extrabold text-blue-600">ETAPA {step.number}</p><h3 className="mt-2 text-xl font-bold">{step.title}</h3><p className="mx-auto mt-3 max-w-xs text-sm leading-relaxed text-slate-600">{step.description}</p>
-              </FadeIn>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="px-6 py-20 sm:px-10 lg:py-24">
-        <FadeIn className="relative mx-auto grid max-w-7xl overflow-hidden rounded-lg bg-blue-600 text-white lg:grid-cols-[1fr_.72fr]">
-          <div className="relative z-10 p-8 sm:p-12 lg:p-16">
-            <p className="text-xs font-extrabold uppercase text-blue-100">Seu canal próprio de vendas</p>
-            <h2 className="mt-4 max-w-2xl text-3xl font-extrabold sm:text-5xl">Seu restaurante merece uma experiência digital melhor.</h2>
-            <p className="mt-5 text-base text-blue-100">Comece a modernizar seu atendimento com a Aladay.</p>
-            <button type="button" onClick={() => handleSignup('promotional_banner')} className="mt-8 inline-flex min-h-12 items-center gap-2 bg-white px-6 py-3 text-sm font-bold text-blue-700 transition hover:bg-slate-950 hover:text-white">Experimentar gratuitamente <ArrowRight className="h-4 w-4" /></button>
-          </div>
-          <div className="relative min-h-72 overflow-hidden bg-slate-950">
-            <img src={PHONE_CAPTURE} alt="Cardápio Aladay em um smartphone" className="absolute left-1/2 top-8 h-[500px] w-[255px] -translate-x-1/2 rotate-[3deg] rounded-[30px] border-[7px] border-slate-900 object-cover object-top shadow-2xl" loading="lazy" decoding="async" />
-          </div>
-        </FadeIn>
       </section>
 
       <section id="planos" className="scroll-mt-24 bg-white px-6 py-20 sm:px-10 lg:py-28">
         <div className="mx-auto max-w-7xl">
-          <FadeIn className="mx-auto max-w-3xl text-center"><p className="text-xs font-extrabold uppercase text-blue-600">Planos reais, sem comissão</p><h2 className="mt-4 text-3xl font-extrabold sm:text-5xl">Uma assinatura. O controle continua seu.</h2><p className="mt-5 text-base leading-relaxed text-slate-600">Escolha entre economia anual no cartão ou a flexibilidade do plano mensal com 15 dias grátis.</p></FadeIn>
+          <FadeIn className="mx-auto max-w-3xl text-center"><p className="text-xs font-extrabold uppercase text-blue-600">Planos reais, sem comissão</p><h2 className="mt-4 text-3xl font-extrabold sm:text-5xl">Uma assinatura. O controle continua seu.</h2><p className="mt-5 text-base leading-relaxed text-slate-600">Compare os planos ou comece com 15 dias de teste grátis sem cartão.</p></FadeIn>
           <div className="mx-auto mt-12 grid max-w-5xl gap-5 lg:grid-cols-2">
             <div className="rounded-lg border border-slate-200 bg-white p-7 sm:p-9">
               <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-extrabold uppercase text-slate-500">Plano Pro</p><h3 className="mt-2 text-2xl font-bold">Anual no cartão</h3></div><span className="bg-emerald-100 px-3 py-1 text-[10px] font-extrabold uppercase text-emerald-800">Economize R$ 370,80/ano</span></div>
@@ -348,11 +332,14 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             <div className="relative overflow-hidden rounded-lg border-2 border-blue-600 bg-slate-950 p-7 text-white sm:p-9">
               <span className="absolute right-0 top-0 bg-blue-600 px-3 py-2 text-[10px] font-extrabold uppercase">Teste grátis disponível</span>
               <p className="text-xs font-extrabold uppercase text-sky-400">Plano Pro</p><h3 className="mt-2 text-2xl font-bold">Mensal</h3>
-              <div className="mt-8 border-y border-white/15 py-6"><span className="text-4xl font-extrabold">R$ 129,90</span><span className="text-sm text-slate-400"> /mês</span><p className="mt-2 text-xs font-semibold text-sky-400">R$ 0 hoje. Cobrança após 15 dias.</p></div>
+              <div className="mt-8 border-y border-white/15 py-6"><span className="text-4xl font-extrabold">R$ 129,90</span><span className="text-sm text-slate-400"> /mês</span><p className="mt-2 text-xs font-semibold text-sky-400">15 dias grátis sem cartão. Escolha um plano ao fim do teste.</p></div>
               <ul className="mt-7 space-y-3 text-sm text-slate-300">{['Todos os recursos do Plano Pro', '15 dias para experimentar a plataforma', 'Sem fidelidade: cancele quando quiser', 'Pix, cartão de crédito ou boleto'].map((item) => <li key={item} className="flex items-start gap-3"><Check className="mt-0.5 h-4 w-4 shrink-0 text-sky-400" />{item}</li>)}</ul>
               <button type="button" onClick={() => { setPlanCycle('MONTHLY'); handleSignup('pricing_monthly', 'MONTHLY'); }} className="mt-8 flex min-h-12 w-full items-center justify-center gap-2 bg-blue-600 px-5 text-sm font-bold text-white transition hover:bg-blue-500">Começar 15 dias grátis <ArrowRight className="h-4 w-4" /></button>
             </div>
           </div>
+          <p className="mt-7 text-center text-sm text-slate-600">
+            <a href="#calculadora" className="font-semibold text-blue-700 underline underline-offset-4">Calcular minha economia</a>
+          </p>
         </div>
       </section>
 
@@ -362,7 +349,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             <p className="text-xs font-extrabold uppercase text-blue-600">Calculadora de margem</p><h2 className="mt-4 text-3xl font-extrabold sm:text-4xl">Quanto uma operação direta pode preservar?</h2><p className="mt-4 text-sm leading-relaxed text-slate-600">A estimativa compara a comissão informada com a assinatura da Aladay. O resultado varia conforme o seu volume real.</p>
             <div className="mt-8 space-y-7">
               <label htmlFor="orders" className="block"><span className="flex justify-between text-sm font-semibold"><span>Pedidos por mês</span><strong>{monthlyOrders}</strong></span><input id="orders" type="range" min="50" max="1500" step="50" value={monthlyOrders} onChange={(event) => setMonthlyOrders(Number(event.target.value))} className="mt-3 w-full accent-blue-600" /></label>
-              <label htmlFor="ticket" className="block"><span className="flex justify-between text-sm font-semibold"><span>Ticket médio</span><strong>{formatBRL(averageTicket)}</strong></span><input id="ticket" type="range" min="25" max="180" step="5" value={averageTicket} onChange={(event) => setAverageTicket(Number(event.target.value))} className="mt-3 w-full accent-blue-600" /></label>
+              <label htmlFor="ticket" className="block"><span className="flex justify-between text-sm font-semibold"><span>Ticket médio</span><strong>{formatBRL(averageTicket)}</strong></span><input id="ticket" type="range" min="25" max="180" step="1" value={averageTicket} aria-valuetext={formatBRL(averageTicket)} onChange={(event) => setAverageTicket(Number(event.target.value))} className="mt-3 w-full accent-blue-600" /></label>
               <label htmlFor="fee" className="block"><span className="flex justify-between text-sm font-semibold"><span>Comissão do marketplace</span><strong>{marketplaceFee}%</strong></span><input id="fee" type="range" min="12" max="27" step="1" value={marketplaceFee} onChange={(event) => setMarketplaceFee(Number(event.target.value))} className="mt-3 w-full accent-blue-600" /></label>
             </div>
           </FadeIn>

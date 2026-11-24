@@ -445,6 +445,7 @@ export default function App() {
   const [showSubscriptionNoticeModal, setShowSubscriptionNoticeModal] = useState<boolean>(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
   const [topMenuLinkCopied, setTopMenuLinkCopied] = useState<boolean>(false);
+  const [kickoffPlan, setKickoffPlan] = useState<'YEARLY' | undefined>();
   const [kickoffSessionKey, setKickoffSessionKey] = useState<number>(() => Date.now());
 
   const [authSession, setAuthSession] = useState<AuthSession | null>(() => {
@@ -1415,6 +1416,7 @@ export default function App() {
     } catch {
       // ignore
     }
+    setKickoffPlan(undefined);
     setKickoffSessionKey(Date.now());
     setCurrentView('home');
   };
@@ -1944,6 +1946,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
+                    setKickoffPlan(undefined);
                     setKickoffSessionKey(Date.now());
                     handleNavigateSafely('kickoff');
                     setIsMobileMenuOpen(false);
@@ -1969,9 +1972,9 @@ export default function App() {
         </div>
 
         {/* Always-Visible Mobile Top Navigation Strip (< lg) */}
-        <nav
+        {(currentView !== 'kickoff' || isSuperAdmin || hasActiveSubscription) && <nav
           aria-label="Navegação rápida mobile"
-          className="lg:hidden border-t border-slate-200 bg-slate-50/90 px-3 py-2 flex items-center gap-1.5 overflow-x-auto"
+          className="lg:hidden border-t border-slate-200 bg-slate-50/90 px-3 py-2 flex items-center gap-1.5 flex-wrap"
         >
           {isSuperAdmin ? (
             <>
@@ -2073,7 +2076,7 @@ export default function App() {
                 }}
                 className="px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 transition-colors"
               >
-                Demonstração no Celular
+                Demo
               </a>
               <a
                 href="#planos"
@@ -2083,21 +2086,11 @@ export default function App() {
                 }}
                 className="px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 transition-colors"
               >
-                Planos (R$ 99/mês Anual)
-              </a>
-              <a
-                href="#calculadora"
-                onClick={() => {
-                  if (currentView !== 'home') handleNavigateSafely('home');
-                  setIsMobileMenuOpen(false);
-                }}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 transition-colors"
-              >
-                Calculadora
+                Planos
               </a>
             </>
           )}
-        </nav>
+        </nav>}
 
         {/* Expandable Mobile Drawer Menu */}
         {isMobileMenuOpen && (
@@ -2263,7 +2256,8 @@ export default function App() {
             tenant={tenant}
             authSession={authSession}
             onNavigateToLogin={() => handleNavigateSafely('auth')}
-            onNavigateToSetup={() => {
+            onNavigateToSetup={(plan) => {
+              setKickoffPlan(plan);
               setKickoffSessionKey(Date.now());
               handleNavigateSafely('kickoff');
             }}
@@ -2293,6 +2287,7 @@ export default function App() {
         {currentView === 'kickoff' && (
           <ProjectKickoffView
             key={`kickoff_session_${kickoffSessionKey}`}
+            initialPlan={kickoffPlan}
             onTenantCreated={handleTenantCreated}
             onNavigateToView={(view) => handleNavigateSafely(view)}
             onSessionAuthenticated={handleSessionAuthenticated}
@@ -2537,6 +2532,7 @@ export default function App() {
                 type="button"
                 onClick={() => {
                   setShowSubscriptionNoticeModal(false);
+                  setKickoffPlan(undefined);
                   setKickoffSessionKey(Date.now());
                   setCurrentView('kickoff');
                 }}

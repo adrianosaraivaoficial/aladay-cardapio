@@ -18,19 +18,21 @@ import {
 import { AsaasBillingType, AsaasSubscriptionData, AuthSession, RestaurantTenant } from '../types';
 
 interface ProjectKickoffViewProps {
+  initialPlan?: 'YEARLY';
   onTenantCreated: (tenant: RestaurantTenant) => void;
   onNavigateToView: (view: 'consumer' | 'admin') => void;
   onSessionAuthenticated?: (session: AuthSession) => void;
 }
 
 export const ProjectKickoffView: React.FC<ProjectKickoffViewProps> = ({
+  initialPlan,
   onTenantCreated,
   onNavigateToView,
   onSessionAuthenticated,
 }) => {
   // Onboarding Gate State: Step 1 (Subscription or 15-Day Free Trial Signup) -> Step 2 (Create Restaurant & Menu)
   const [activeStep, setActiveStep] = useState<'subscription' | 'restaurant'>('subscription');
-  const [signupMode, setSignupMode] = useState<'trial_15_days' | 'paid_direct'>('trial_15_days');
+  const [signupMode, setSignupMode] = useState<'trial_15_days' | 'paid_direct'>(initialPlan ? 'paid_direct' : 'trial_15_days');
   const [selectedPlanCycle, setSelectedPlanCycle] = useState<'YEARLY' | 'MONTHLY'>('YEARLY');
   const [subscriptionConfirmed, setSubscriptionConfirmed] = useState(false);
   const [lockedStepWarning, setLockedStepWarning] = useState(false);
@@ -480,18 +482,16 @@ export const ProjectKickoffView: React.FC<ProjectKickoffViewProps> = ({
   return (
     <div className="space-y-6 pb-12">
       {/* Top Header & 2-Step Onboarding Progress Bar */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5 shadow-2xs">
+      <div className="bg-gradient-to-br from-blue-50 to-white border border-blue-100 rounded-2xl p-5 sm:p-7 space-y-5 shadow-2xs">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 text-xs font-semibold text-blue-600 mb-1">
               <span>Aladay Cardápios Digitais</span>
-              <span aria-hidden="true">&middot;</span>
-              <span>Teste Grátis 15 Dias ou Assinatura Oficial</span>
             </div>
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-950">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-950">
               {activeStep === 'subscription'
                 ? signupMode === 'trial_15_days'
-                  ? '1. Cadastro para Período de Teste Grátis (15 Dias)'
+                  ? 'Comece seu teste de 15 dias'
                   : selectedPlanCycle === 'YEARLY'
                   ? '1. Assinatura Anual no Cartão (R$ 99,00/mês)'
                   : '1. Assinatura Mensal do Plano (R$ 129,90/mês)'
@@ -500,7 +500,7 @@ export const ProjectKickoffView: React.FC<ProjectKickoffViewProps> = ({
             <p className="text-xs text-slate-600 mt-1 max-w-2xl">
               {activeStep === 'subscription'
                 ? signupMode === 'trial_15_days'
-                  ? 'Cadastre seus dados abaixo para liberar 15 dias de teste grátis com todos os recursos (Cardápio Digital, Pix Direto, KDS e WhatsApp Automático) sem cobrança hoje.'
+                  ? 'Crie sua conta. Assim que o teste for ativado, você poderá configurar seu restaurante e publicar o cardápio.'
                   : selectedPlanCycle === 'YEARLY'
                   ? 'Conclua o cadastro da sua assinatura anual por R$ 99,00/mês no cartão de crédito (12x R$ 99,00) para liberar imediatamente a criação do seu restaurante e cardápio digital.'
                   : 'Conclua o cadastro da sua assinatura mensal fixa de R$ 129,90/mês para liberar imediatamente a criação do seu restaurante e cardápio digital.'
@@ -510,38 +510,20 @@ export const ProjectKickoffView: React.FC<ProjectKickoffViewProps> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <span
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border ${
-                subscriptionConfirmed
-                  ? 'bg-blue-50 text-blue-800 border-blue-200'
-                  : 'bg-amber-50 text-amber-800 border-amber-200'
-              }`}
-            >
-              {subscriptionConfirmed ? (
-                <>
-                  <CheckCircle2 className="w-4 h-4 text-blue-600" />
-                  <span>
-                    {subscriptionData?.isTrial
-                      ? 'Teste Grátis de 15 Dias Ativo'
-                      : subscriptionData?.cycle === 'YEARLY' || selectedPlanCycle === 'YEARLY'
-                      ? 'Assinatura Anual Ativa (R$ 99,00/mês)'
-                      : 'Assinatura Ativa (R$ 129,90/mês)'}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <Lock className="w-3.5 h-3.5 text-amber-600" />
-                  <span>
-                    {signupMode === 'trial_15_days'
-                      ? 'Aguardando Cadastro do Teste Grátis'
-                      : 'Aguardando Assinatura do Plano'}
-                  </span>
-                </>
-              )}
+          {subscriptionConfirmed && (
+            <span className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-800">
+              <CheckCircle2 className="size-4 text-blue-600" aria-hidden="true" />
+              {subscriptionData?.isTrial ? 'Teste grátis ativo' : 'Assinatura ativa'}
             </span>
-          </div>
+          )}
         </div>
+
+        {activeStep === 'subscription' && signupMode === 'trial_15_days' && !subscriptionConfirmed && (
+          <div className="rounded-xl border border-blue-100 bg-white px-4 py-3">
+            <p className="text-sm font-bold text-blue-950">15 dias grátis · R$ 0 hoje · Sem cartão</p>
+            <p className="mt-1 text-sm text-slate-600">Ao fim do teste, escolha um plano para continuar usando a Aladay.</p>
+          </div>
+        )}
 
         {/* 2-Step Gated Navigation Tabs */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
@@ -569,13 +551,13 @@ export const ProjectKickoffView: React.FC<ProjectKickoffViewProps> = ({
                 {subscriptionConfirmed ? <Check className="w-4 h-4" /> : '1'}
               </div>
               <div>
-                <p className="text-xs font-bold">Passo 1: Assinatura do Plano</p>
+                <p className="text-xs font-bold">{signupMode === 'trial_15_days' ? 'Ativar teste grátis' : 'Ativar assinatura'}</p>
                 <p
                   className={`text-[11px] ${
                     activeStep === 'subscription' ? 'text-slate-300' : 'text-slate-500'
                   }`}
                 >
-                  Cadastro do assinante e ativação do plano
+                  Crie sua conta de acesso
                 </p>
               </div>
             </div>
@@ -617,7 +599,7 @@ export const ProjectKickoffView: React.FC<ProjectKickoffViewProps> = ({
                 {subscriptionConfirmed ? '2' : <Lock className="w-3.5 h-3.5" />}
               </div>
               <div>
-                <p className="text-xs font-bold">Passo 2: Criar Restaurante &amp; Cardápio</p>
+                <p className="text-xs font-bold">Criar restaurante e cardápio</p>
                 <p
                   className={`text-[11px] ${
                     activeStep === 'restaurant' ? 'text-slate-300' : 'text-slate-500'
@@ -625,16 +607,12 @@ export const ProjectKickoffView: React.FC<ProjectKickoffViewProps> = ({
                 >
                   {subscriptionConfirmed
                     ? 'Liberado! Configure sua loja e cardápio digital'
-                    : 'Bloqueado até a confirmação da assinatura'}
+                    : signupMode === 'trial_15_days'
+                      ? 'Disponível após ativar o teste'
+                      : 'Disponível após ativar a assinatura'}
                 </p>
               </div>
             </div>
-            {!subscriptionConfirmed && (
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-200 text-slate-600 flex items-center gap-1">
-                <Lock className="w-3 h-3" />
-                <span>Requer Assinatura</span>
-              </span>
-            )}
           </button>
         </div>
 
@@ -663,15 +641,13 @@ export const ProjectKickoffView: React.FC<ProjectKickoffViewProps> = ({
       {activeStep === 'subscription' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Left Column: Subscriber Registration & Payment Method */}
-          <div className="lg:col-span-7 bg-white border border-slate-200 rounded-2xl p-6 space-y-6 shadow-2xs">
+          <div className="lg:col-span-7 bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 space-y-6 shadow-2xs">
             <div className="pb-3 border-b border-slate-200 flex items-center justify-between">
               <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <UserCheck className="w-4 h-4 text-blue-600" />
-                <span>Dados do Assinante &amp; Conta de Acesso</span>
+                <span>Dados da conta</span>
               </h2>
-              <span className="text-[11px] font-mono text-slate-500">
-                Checkout Seguro Asaas
-              </span>
+              {signupMode === 'paid_direct' && <span className="text-xs text-slate-600">Pagamento via Asaas</span>}
             </div>
 
             {subError && (
@@ -686,6 +662,7 @@ export const ProjectKickoffView: React.FC<ProjectKickoffViewProps> = ({
               <div
                 className="sr-only"
                 aria-hidden="true"
+                inert
                 style={{
                   position: 'absolute',
                   opacity: 0,
@@ -740,6 +717,7 @@ export const ProjectKickoffView: React.FC<ProjectKickoffViewProps> = ({
                     type="text"
                     required
                     id="aladay_signup_subscriber_doc"
+                    aria-describedby="signup-doc-hint"
                     name="aladay_signup_subscriber_doc"
                     autoComplete="off"
                     value={subscriberCpfCnpj}
@@ -747,6 +725,7 @@ export const ProjectKickoffView: React.FC<ProjectKickoffViewProps> = ({
                     placeholder="00.000.000/0001-00 ou CPF"
                     className="w-full p-2.5 text-xs border border-slate-200 rounded-xl text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition-all"
                   />
+                  <p id="signup-doc-hint" className="mt-1 text-xs text-slate-600">Identifica o titular da conta.</p>
                 </div>
               </div>
 
@@ -830,6 +809,7 @@ export const ProjectKickoffView: React.FC<ProjectKickoffViewProps> = ({
                 </label>
                 <input
                   id="aladay_signup_subscriber_phone"
+                  aria-describedby="signup-phone-hint"
                   name="aladay_signup_subscriber_phone"
                   type="tel"
                   required
@@ -839,6 +819,7 @@ export const ProjectKickoffView: React.FC<ProjectKickoffViewProps> = ({
                   placeholder="Ex: 11987654321"
                   className="w-full p-2.5 text-xs border border-slate-200 rounded-xl text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition-all"
                 />
+                <p id="signup-phone-hint" className="mt-1 text-xs text-slate-600">Número de contato do responsável pelo restaurante.</p>
               </div>
 
               {/* Mode Selector: 15-Day Free Trial vs Annual R$ 99,00/mês (Cartão) vs Monthly R$ 129,90/mês */}
@@ -928,38 +909,7 @@ export const ProjectKickoffView: React.FC<ProjectKickoffViewProps> = ({
                   </button>
                 </div>
 
-                {signupMode === 'trial_15_days' ? (
-                  <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-xl space-y-2.5 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-blue-950 flex items-center gap-1.5">
-                        <CheckCircle2 className="w-4 h-4 text-blue-600" />
-                        <span>Resumo do Seu Período de Teste Grátis (15 Dias)</span>
-                      </span>
-                      <span className="font-mono text-[11px] font-bold text-blue-800 bg-blue-100 px-2 py-0.5 rounded">
-                        Sem Cartão Obrigatório
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-[11px]">
-                      <div className="p-2.5 bg-white rounded-lg border border-blue-100">
-                        <p className="text-slate-500">Valor cobrado hoje:</p>
-                        <p className="font-mono font-black text-blue-700 text-sm">R$ 0,00 (Grátis)</p>
-                      </div>
-                      <div className="p-2.5 bg-white rounded-lg border border-blue-100">
-                        <p className="text-slate-500">Duração do teste:</p>
-                        <p className="font-mono font-bold text-slate-900 text-sm">15 dias corridos</p>
-                      </div>
-                      <div className="p-2.5 bg-white rounded-lg border border-blue-100">
-                        <p className="text-slate-500">Vencimento após teste:</p>
-                        <p className="font-mono font-bold text-slate-900 text-sm">
-                          {new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR')}
-                        </p>
-                      </div>
-                    </div>
-                    <p className="text-[11px] text-slate-600 leading-relaxed">
-                      Você terá acesso integral ao Cardápio Digital, Pix 100% direto na sua conta, Painel KDS e WhatsApp Automático. Após os 15 dias, você pode escolher entre a <strong>Assinatura Anual por R$ 99,00/mês no Cartão de Crédito</strong> ou a <strong>Assinatura Mensal por R$ 129,90/mês</strong>.
-                    </p>
-                  </div>
-                ) : (
+                {signupMode === 'paid_direct' && (
                   <div className="space-y-4 pt-2">
                     {selectedPlanCycle === 'YEARLY' ? (
                       <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between gap-3 text-xs">
@@ -1133,7 +1083,7 @@ export const ProjectKickoffView: React.FC<ProjectKickoffViewProps> = ({
                       ? 'Ativando 15 Dias de Teste Grátis...'
                       : 'Processando Assinatura no Asaas...'
                     : signupMode === 'trial_15_days'
-                    ? 'Ativar Meus 15 Dias Grátis e Criar Cardápio Digital'
+                    ? 'Ativar meu teste grátis'
                     : selectedPlanCycle === 'YEARLY'
                     ? 'Assinar Plano Anual por R$ 99,00/mês no Cartão e Liberar Cardápio'
                     : billingType === 'CREDIT_CARD'
@@ -1312,7 +1262,7 @@ export const ProjectKickoffView: React.FC<ProjectKickoffViewProps> = ({
                 <h3 className="text-lg font-bold text-white mt-0.5">
                   {signupMode === 'paid_direct' && selectedPlanCycle === 'YEARLY'
                     ? 'Aladay Anual (Cartão)'
-                    : 'Aladay Pro · Multi-Tenant'}
+                    : 'Aladay Pro'}
                 </h3>
               </div>
               <div className="text-right">

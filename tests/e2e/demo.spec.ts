@@ -33,9 +33,11 @@ async function add(page: Page, name: string, quantity = '1') {
 test('landing opens the isolated demo and the trial returns to commercial signup', async ({ page }) => {
   await page.route('**/api/**', route => route.abort());
   await page.goto(origin);
-  const explore = page.getByRole('link', { name: 'Explorar demonstração' });
+  const demoLinks = page.getByRole('link', { name: 'Fazer um pedido na demo' });
+  await expect(demoLinks).toHaveCount(2);
+  const explore = demoLinks.first();
   await expect(explore).toHaveAttribute('href', '/demo');
-  await expect(page.getByRole('link', { name: 'Abrir Demonstração Interativa' })).toHaveAttribute('href', '/demo');
+  await expect(demoLinks.last()).toHaveAttribute('href', '/demo');
   await explore.click();
   await expect(page).toHaveURL(origin + '/demo');
   await expect(page.getByRole('heading', { name: 'Restaurante Demonstração Aladay' })).toBeVisible();
@@ -47,7 +49,31 @@ test('landing opens the isolated demo and the trial returns to commercial signup
   await expect(page.getByRole('heading', { name: 'Burger da Casa' })).toHaveCount(0);
   await page.getByRole('link', { name: 'Iniciar teste grátis' }).click();
   await expect(page).toHaveURL(origin + '/?teste-gratis=1');
-  await expect(page.getByRole('heading', { name: /Cadastro para Período de Teste Grátis/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Comece seu teste de 15 dias' })).toBeVisible();
+});
+
+test('mobile landing keeps navigation visible and carries the selected offer into signup', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.route('**/api/**', route => route.abort());
+  await page.goto(origin);
+  const quickNav = page.getByRole('navigation', { name: 'Navegação rápida mobile' });
+  await expect(quickNav.getByRole('link', { name: 'Demo' })).toBeInViewport();
+  await expect(quickNav.getByRole('link', { name: 'Planos' })).toBeInViewport();
+  await page.getByRole('button', { name: 'Apenas essenciais' }).click();
+
+  const ticket = page.getByRole('slider', { name: /Ticket médio/ });
+  await expect(ticket).toHaveValue('68');
+  await ticket.press('ArrowRight');
+  await expect(ticket).toHaveValue('69');
+  await expect(ticket).toHaveAttribute('aria-valuetext', /69,00/);
+
+  await page.getByRole('button', { name: 'Escolher plano anual' }).click();
+  await expect(page.getByRole('heading', { name: /Assinatura Anual/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Teste Grátis 15d' }).click();
+  await expect(page.getByRole('heading', { name: 'Comece seu teste de 15 dias' })).toBeVisible();
+  await expect(page.getByText('15 dias grátis · R$ 0 hoje · Sem cartão')).toBeInViewport();
+  await expect(page.getByRole('textbox', { name: '', exact: true })).toHaveCount(0);
 });
 
 test('cart, duplicate checkout, immediate tab updates, status, reload and reset have no operational requests', async ({ page, context, browser }) => {
